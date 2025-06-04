@@ -91,9 +91,17 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles
 		SERVER_READ_TIMEOUT,
 		SERVER_WRITE_TIMEOUT,
 		SERVER_SHUTDOWN_TIMEOUT,
+		SERVER_OPENFEATURE_PROVIDER_NAME,
+		SERVER_OPENFEATURE_PROVIDER_URL,
 	)
 	if err != nil {
 		return err
+	}
+
+	err = SetOpenFeatureProvider(cfg)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to set OpenFeature provider")
+		return err // Return early if OpenFeature provider setup fails.
 	}
 
 	// serverCtx is canceled when an OS signal is received, used for server's BaseContext.
