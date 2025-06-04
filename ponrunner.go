@@ -102,6 +102,7 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles
 
 	router.Use(
 		chim.RequestID, // Adds a unique request ID to each request.
+		chim.Recoverer,
 		chim.Timeout(time.Duration(cfg.Int64(SERVER_REQUEST_TIMEOUT))*time.Second),
 		middleware.LogRequest(cfg), // Custom middleware to log requests.
 
