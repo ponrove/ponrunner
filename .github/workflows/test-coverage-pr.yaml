@@ -1,0 +1,77 @@
+name: Go Test Coverage Report On Pull Request
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install dependencies
+        run: go mod vendor
+      - name: Test with the Go CLI
+        if: always()
+        id: test
+        run: go test -coverprofile=unit.coverage.out ./...
+      - name: Upload coverage report
+        if: always()
+        id: coverage
+        env:
+          CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
+          CODACY_ORGANIZATION_PROVIDER: gh
+          CODACY_USERNAME: ${{ github.repository_owner }}
+          CODACY_PROJECT_NAME: ${{ github.event.repository.name }}
+        run: |
+          bash <(curl -Ls https://coverage.codacy.com/get.sh) report \
+              --force-coverage-parser go -r unit.coverage.out
+      - name: report
+        uses: actions/github-script@v7
+        if: always()
+        env:
+          TEST_RESULT: ${{ steps.test.outputs.stdout }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          script: |
+            // 1. Retrieve existing bot comments for the PR
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const botComment = comments.find(comment => {
+              return comment.user.type === 'Bot' && comment.body.includes('Golang Build & Test status')
+            })
+
+            // 2. Prepare format of the comment
+            const output = `## Golang Build & Test status 🚀
+
+            #### Go Test Outcome 🧪\`${{ steps.test.outcome }}\`
+
+            #### Coverage Report 📊\`${{ steps.coverage.outcome }}\`
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Workflow: \`${{ github.workflow }}\`*`;
+
+            // 3. If we have a comment, update it, otherwise create a new one
+            if (botComment) {
+              github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              })
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              })
+            }
