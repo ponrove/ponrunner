@@ -178,10 +178,12 @@ func TestRuntime_SuccessfulShutdown(t *testing.T) {
 
 	mockCfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
 	// Short timeouts for test speed, but long enough for operations.
-	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1  // 1 second request timeout
-	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1 // 1 second shutdown timeout
-	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1     // 1 second read timeout
-	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1    // 1 second write timeout
+	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1                                 // 1 second request timeout
+	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1                                // 1 second shutdown timeout
+	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1                                    // 1 second read timeout
+	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1                                   // 1 second write timeout
+	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"      // Set a valid provider name
+	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080" // Set a valid provider URL
 
 	ctx, cancel := context.WithCancel(context.Background())
 	runtimeErrChan := make(chan error, 1)
@@ -234,10 +236,12 @@ func TestRuntime_ListenAndServeFails(t *testing.T) {
 	mockCfg := configura.NewConfigImpl()
 	mockCfg.RegInt64[SERVER_PORT] = int64(busyPort) // Use a free port
 	// Short timeouts for test speed, but long enough for operations.
-	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1  // 1 second request timeout
-	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1 // 1 second shutdown timeout
-	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1     // 1 second read timeout
-	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1    // 1 second write timeout
+	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1                                 // 1 second request timeout
+	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1                                // 1 second shutdown timeout
+	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1                                    // 1 second read timeout
+	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1                                   // 1 second write timeout
+	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"      // Set a valid provider name
+	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080" // Set a valid provider URL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second) // Test timeout
 	defer cancel()
