@@ -98,7 +98,7 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles
 		return err
 	}
 
-	err = SetOpenFeatureProvider(cfg)
+	err = setOpenFeatureProvider(cfg)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to set OpenFeature provider")
 		return err // Return early if OpenFeature provider setup fails.

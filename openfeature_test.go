@@ -1,11 +1,10 @@
-package ponrunner_test
+package ponrunner
 
 import (
 	"testing"
 
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/ponrove/configura"
-	"github.com/ponrove/ponrunner"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,7 +27,7 @@ var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 		expected: "NoopProvider",
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME: "NoopProvider",
+				SERVER_OPENFEATURE_PROVIDER_NAME: "NoopProvider",
 			},
 		},
 	},
@@ -37,18 +36,18 @@ var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 		expected: "GO Feature Flag Provider",
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
+				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
+				SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
 			},
 		},
 		err: nil,
 	},
 	{
 		name: "Provider name given, missing url",
-		err:  ponrunner.ErrOpenFeatureProviderURLNotSet,
+		err:  ErrOpenFeatureProviderURLNotSet,
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
+				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
 			},
 		},
 	},
@@ -57,27 +56,27 @@ var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 		expected: "NoopProvider",
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_URL: "http://custom-provider.example.com",
+				SERVER_OPENFEATURE_PROVIDER_URL: "http://custom-provider.example.com",
 			},
 		},
 	},
 	{
 		name: "Provider URL invalid",
-		err:  ponrunner.ErrInvalidOpenFeatureProviderURL,
+		err:  ErrInvalidOpenFeatureProviderURL,
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_URL:  "http:/i\nvalid-url",
+				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
+				SERVER_OPENFEATURE_PROVIDER_URL:  "http:/i\nvalid-url",
 			},
 		},
 	},
 	{
 		name: "Unsupported OpenFeature Provider",
-		err:  ponrunner.ErrUnsupportedOpenFeatureProvider,
+		err:  ErrUnsupportedOpenFeatureProvider,
 		cfg: &configura.ConfigImpl{
 			RegString: map[configura.Variable[string]]string{
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME: "unknown-provider-name",
-				ponrunner.SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
+				SERVER_OPENFEATURE_PROVIDER_NAME: "unknown-provider-name",
+				SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
 			},
 		},
 	},
@@ -88,7 +87,7 @@ var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 func TestSetOpenFeatureProvider(t *testing.T) {
 	for _, tc := range TestSetOpenFeatureProviderTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ponrunner.SetOpenFeatureProvider(tc.cfg)
+			err := setOpenFeatureProvider(tc.cfg)
 			if tc.err != nil {
 				assert.ErrorIs(t, err, tc.err)
 				return

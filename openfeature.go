@@ -23,7 +23,7 @@ var (
 
 // SetOpenFeatureProvider initializes the OpenFeature provider based on the server configuration. It's possible to add
 // more providers in the future, but for now we only support the Go Feature Flag provider.
-func SetOpenFeatureProvider(cfg configura.Config) error {
+func setOpenFeatureProvider(cfg configura.Config) error {
 	openfeature.SetProvider(openfeature.NoopProvider{})
 	if cfg.String(SERVER_OPENFEATURE_PROVIDER_NAME) == "" || cfg.String(SERVER_OPENFEATURE_PROVIDER_NAME) == "NoopProvider" {
 		return nil // No provider configured, using noop provider.
