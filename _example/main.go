@@ -26,11 +26,13 @@ func main() {
 
 	// Initialize Configuration with configura
 	cfg := configura.NewConfigImpl()
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, 8080)                 // Fallback port 8080
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_WRITE_TIMEOUT, int64(5))    // Fallback write timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_READ_TIMEOUT, int64(5))     // Fallback read timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_REQUEST_TIMEOUT, int64(5))  // Fallback request timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_SHUTDOWN_TIMEOUT, int64(5)) // Fallback shutdown timeout 5 seconds
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, 8080)                                // Fallback port 8080
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_WRITE_TIMEOUT, int64(5))                   // Fallback write timeout 5 seconds
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_READ_TIMEOUT, int64(5))                    // Fallback read timeout 5 seconds
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_REQUEST_TIMEOUT, int64(5))                 // Fallback request timeout 5 seconds
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_SHUTDOWN_TIMEOUT, int64(5))                // Fallback shutdown timeout 5 seconds
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME, "NoopProvider") // Fallback to NoopProvider
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_URL, "")              // No URL for NoopProvider
 
 	r := chi.NewRouter()
 	err := ponrunner.Start(ctx, cfg, r, MyAPIBundle)
