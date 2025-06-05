@@ -109,11 +109,11 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles
 	defer stopSignalNotify() // Ensures signal notifications are stopped when Runtime exits.
 
 	router.Use(
-		chim.RequestID, // Adds a unique request ID to each request.
+		middleware.IPAddress(cfg), // Adds the client's IP address to the request context.
+		chim.RequestID,            // Adds a unique request ID to each request.
 		chim.Recoverer,
 		chim.Timeout(time.Duration(cfg.Int64(SERVER_REQUEST_TIMEOUT))*time.Second),
 		middleware.LogRequest(cfg), // Custom middleware to log requests.
-
 	)
 
 	h := humachi.New(router, huma.DefaultConfig("Ponrove Backend API", "1.0.0"))
