@@ -46,6 +46,7 @@ const (
 	REQUEST_LOG_FIELD_REFERER        configura.Variable[string] = "REQUEST_LOG_FIELD_REFERER"
 	REQUEST_LOG_FIELD_PROTOCOL       configura.Variable[string] = "REQUEST_LOG_FIELD_PROTOCOL"
 	REQUEST_LOG_FIELD_REQUEST_ID     configura.Variable[string] = "REQUEST_LOG_FIELD_REQUEST_ID"
+	REQUEST_LOG_FIELD_REAL_IP        configura.Variable[string] = "REQUEST_LOG_FIELD_REAL_IP"
 )
 
 // fallback is a helper function that returns the fallback value if the provided value is empty.
@@ -83,6 +84,7 @@ func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr).
 				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")).
 				Str(fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto).
+				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())).
 				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())).
 				Msgf("[%s][%d] %s", r.Method, crw.statusCode, r.URL.Path)
 		})
