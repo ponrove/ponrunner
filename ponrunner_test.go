@@ -169,7 +169,7 @@ func getFreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func TestRuntime_SuccessfulShutdown(t *testing.T) {
+func TestStart_SuccessfulShutdown(t *testing.T) {
 	t.Parallel()
 
 	mockCfg := configura.NewConfigImpl()
@@ -186,12 +186,14 @@ func TestRuntime_SuccessfulShutdown(t *testing.T) {
 	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080" // Set a valid provider URL
 
 	ctx, cancel := context.WithCancel(context.Background())
-	runtimeErrChan := make(chan error, 1)
+	startErrChan := make(chan error, 1)
 
 	r := chi.NewRouter()
 	go func() {
-		// We expect Runtime to return nil on successful graceful shutdown.
-		runtimeErrChan <- Start(ctx, mockCfg, r)
+		// We expect Start to return nil on successful graceful shutdown.
+		startErrChan <- Start(ctx, mockCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+			return nil
+		})
 	}()
 
 	// Wait for the server to start by trying to connect
@@ -211,18 +213,18 @@ func TestRuntime_SuccessfulShutdown(t *testing.T) {
 	// Simulate a shutdown signal by cancelling the context
 	cancel()
 
-	// Wait for Runtime to exit
+	// Wait for Start to exit
 	select {
-	case err := <-runtimeErrChan:
-		// On graceful shutdown triggered by context cancellation, Runtime should return nil.
+	case err := <-startErrChan:
+		// On graceful shutdown triggered by context cancellation, Start should return nil.
 		// http.ErrServerClosed is handled internally.
-		assert.NoError(t, err, "Runtime should exit gracefully without error")
+		assert.NoError(t, err, "Start should exit gracefully without error")
 	case <-time.After(3 * time.Second): // Generous timeout for shutdown
-		t.Fatal("Runtime did not exit after context cancellation")
+		t.Fatal("Start did not exit after context cancellation")
 	}
 }
 
-func TestRuntime_ListenAndServeFails(t *testing.T) {
+func TestStart_ListenAndServeFails(t *testing.T) {
 	t.Parallel()
 
 	// Create a listener to occupy a port
@@ -247,9 +249,9 @@ func TestRuntime_ListenAndServeFails(t *testing.T) {
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, mockCfg, r)
+	runErr := Start(ctx, mockCfg, r, func(c configura.Config, r chi.Router, a huma.API) error { return nil })
 
-	assert.Error(t, runErr, "Runtime should return an error if ListenAndServe fails")
+	assert.Error(t, runErr, "Start should return an error if ListenAndServe fails")
 	// Check if the error is a bind error (OS-dependent message)
 	// Example: "bind: address already in use" or "listen tcp :<port>: bind: address already in use"
 	// net.OpError is common for such issues.
@@ -273,7 +275,7 @@ func testBundle(cfg configura.Config, api huma.API) error {
 	return nil
 }
 
-func TestRuntime_APIBundleRegistrationFails(t *testing.T) {
+func TestStart_APIBundleRegistrationFails(t *testing.T) {
 	t.Parallel()
 
 	mockCfg := configura.NewConfigImpl()
@@ -286,8 +288,10 @@ func TestRuntime_APIBundleRegistrationFails(t *testing.T) {
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, mockCfg, r, testBundle)
+	runErr := Start(ctx, mockCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+		return RegisterAPIBundles(cfg, a, testBundle)
+	})
 
 	assert.Error(t, runErr)
-	assert.True(t, errors.Is(runErr, configura.ErrMissingVariable), "Runtime should return the error from API bundle registration. Got: %v", runErr)
+	assert.True(t, errors.Is(runErr, configura.ErrMissingVariable), "Start should return the error from API bundle registration. Got: %v", runErr)
 }

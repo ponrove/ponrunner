@@ -82,9 +82,11 @@ func handleShutdown(shutdownParentCtx context.Context, srv serverControl, shutdo
 	return nil
 }
 
+type RegisterRoutes func(configura.Config, chi.Router, huma.API) error
+
 // Start initializes and starts the Ponrove server. It sets up the HTTP server with the provided configuration and API
 // bundles, and handles graceful shutdown on receiving OS signals.
-func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles ...APIBundle) error {
+func Start(ctx context.Context, cfg configura.Config, router chi.Router, register RegisterRoutes) error {
 	err := cfg.ConfigurationKeysRegistered(
 		SERVER_PORT,
 		SERVER_REQUEST_TIMEOUT,
@@ -118,8 +120,8 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, bundles
 
 	h := humachi.New(router, huma.DefaultConfig("Ponrove Backend API", "1.0.0"))
 
-	if err := RegisterAPIBundles(cfg, h, bundles...); err != nil {
-		log.Error().Err(err).Msg("failed to register API bundles")
+	if err := register(cfg, router, h); err != nil {
+		log.Error().Err(err).Msg("failed to register routes")
 		return err // Return early if API bundle registration fails.
 	}
 
