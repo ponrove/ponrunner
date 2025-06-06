@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/open-feature/go-sdk v1.15.0
 	github.com/open-feature/go-sdk-contrib/providers/go-feature-flag v0.2.5
-	github.com/ponrove/configura v1.0.0-rc.1
+	github.com/ponrove/configura v1.0.0-rc.2
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.10.0
 )

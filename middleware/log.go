@@ -49,14 +49,6 @@ const (
 	REQUEST_LOG_FIELD_REAL_IP        configura.Variable[string] = "REQUEST_LOG_FIELD_REAL_IP"
 )
 
-// fallback is a helper function that returns the fallback value if the provided value is empty.
-func fallback(value string, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
 // LogRequest is a middleware that logs the request details on each request.
 func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -76,16 +68,16 @@ func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 			// Fetch logger from context, potentially has new fields and contextual data added by the endpoints.
 			postLogger := zerolog.Ctx(r.Context())
 			postLogger.Info().
-				Dur(fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())).
-				Str(fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())).
+				Dur(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())).
+				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())).
 				Msgf("[%s][%d] %s", r.Method, crw.statusCode, r.URL.Path)
 		})
 	}
