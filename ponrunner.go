@@ -3,8 +3,10 @@ package ponrunner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -15,8 +17,6 @@ import (
 	chim "github.com/go-chi/chi/v5/middleware"
 	"github.com/ponrove/configura"
 	"github.com/ponrove/ponrunner/middleware"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -54,7 +54,7 @@ type serverControl interface {
 // It takes a parent context (for the shutdown operation itself),
 // the server component to shut down, and a timeout duration for the shutdown process.
 func handleServerShutdown(shutdownParentCtx context.Context, srv serverControl, shutdownTimeout time.Duration) error {
-	log.Info().Msg("Initiating server shutdown sequence...")
+	slog.Info("Initiating server shutdown sequence...")
 
 	// Create a context with a timeout for the srv.Shutdown call.
 	shutdownOpCtx, cancelShutdownOp := context.WithTimeout(shutdownParentCtx, shutdownTimeout)
@@ -64,9 +64,9 @@ func handleServerShutdown(shutdownParentCtx context.Context, srv serverControl, 
 	go func() {
 		<-shutdownOpCtx.Done()
 		if shutdownOpCtx.Err() == context.DeadlineExceeded {
-			log.Warn().Msg("Shutdown operation context deadline exceeded. Server might be taking too long to close active connections.")
+			slog.Warn("Shutdown operation context deadline exceeded. Server might be taking too long to close active connections.")
 		} else if shutdownOpCtx.Err() == context.Canceled { // This case handles when shutdownParentCtx is canceled.
-			log.Info().Msg("Shutdown operation context was canceled by its parent.")
+			slog.Info("Shutdown operation context was canceled by its parent.")
 		}
 	}()
 
@@ -75,14 +75,14 @@ func handleServerShutdown(shutdownParentCtx context.Context, srv serverControl, 
 	err := srv.Shutdown(shutdownOpCtx)
 	if err != nil {
 		if err == http.ErrServerClosed {
-			log.Info().Msg("Server was already closed.")
+			slog.Info("Server was already closed.")
 			return nil // Not an error in this context; shutdown is effectively complete.
 		}
-		log.Error().Err(err).Msg("Error during server shutdown")
+		slog.Error("Error during server shutdown", slog.Any("error", err))
 		return err
 	}
 
-	log.Info().Msg("Server shutdown gracefully completed.")
+	slog.Info("Server shutdown gracefully completed.")
 	return nil
 }
 
@@ -109,48 +109,57 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	}
 
 	// Set up the logger based on the configuration.
-	logLevel := configura.Fallback(cfg.String(SERVER_LOG_LEVEL), "info")
-	switch logLevel {
-	case "trace":
-		log.Logger = log.Logger.Level(zerolog.TraceLevel)
+	logLevelStr := configura.Fallback(cfg.String(SERVER_LOG_LEVEL), "info")
+	var logLevel slog.Level
+	switch logLevelStr {
+	case "trace": // slog doesn't have trace, map to debug
+		logLevel = slog.LevelDebug
 	case "debug":
-		log.Logger = log.Logger.Level(zerolog.DebugLevel)
+		logLevel = slog.LevelDebug
 	case "info":
-		log.Logger = log.Logger.Level(zerolog.InfoLevel)
+		logLevel = slog.LevelInfo
 	case "warn":
-		log.Logger = log.Logger.Level(zerolog.WarnLevel)
+		logLevel = slog.LevelWarn
 	case "error":
-		log.Logger = log.Logger.Level(zerolog.ErrorLevel)
-	case "fatal":
-		log.Logger = log.Logger.Level(zerolog.FatalLevel)
-	case "panic":
-		log.Logger = log.Logger.Level(zerolog.PanicLevel)
-	case "nolevel":
-		log.Logger = log.Logger.Level(zerolog.NoLevel) // NoLevel means no logging.
-	case "disabled":
-		log.Logger = log.Logger.Level(zerolog.Disabled) // Disabled means no logging.
+		logLevel = slog.LevelError
 	default:
-		log.Logger = log.Logger.Level(zerolog.InfoLevel) // Default to Info level if not recognized.
+		slog.WarnContext(ctx, "Unsupported or unmappable log level configured, defaulting to INFO", slog.String("configuredLevel", logLevelStr))
+		logLevel = slog.LevelInfo // Default to Info level.
 	}
+
+	logFormat := configura.Fallback(cfg.String(SERVER_LOG_FORMAT), "text") // Default to text
+	var handler slog.Handler
+	opts := &slog.HandlerOptions{Level: logLevel}
+
+	if logFormat == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	}
+	defaultLogger := slog.New(handler)
+	slog.SetDefault(defaultLogger)
 
 	// Set the open feature provider if configured.
 	err = setOpenFeatureProvider(cfg)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to set OpenFeature provider")
+		slog.ErrorContext(ctx, "Failed to set OpenFeature provider", slog.Any("error", err))
 		return err // Return early if OpenFeature provider setup fails.
 	}
 
 	// Initialize OpenTelemetry if enabled
+	// Pass the slog-augmented context to setupOTelSDK
 	otelShutdown, otelSetupErr := setupOTelSDK(ctx, cfg)
 	if otelSetupErr != nil {
 		return fmt.Errorf("Failed to setup OpenTelemetry SDK: %w", otelSetupErr)
-	} else {
-		log.Info().Msg("OpenTelemetry SDK initialized successfully.")
+	} else if otelShutdown != nil { // Check otelShutdown is not nil (i.e., OTel actually initialized)
+		slog.InfoContext(ctx, "OpenTelemetry SDK initialized successfully.")
 		// Defer the shutdown of OpenTelemetry to ensure it's called on exit.
 		// Use a background context for shutdown as the main context might be canceled.
 		defer func() {
+			// Use a background context for OTel shutdown, as the parent ctx might be done.
+			// Logs from here will use the slog.Default logger.
 			if err := otelShutdown(context.Background()); err != nil {
-				log.Error().Err(err).Msg("error during OpenTelemetry shutdown")
+				slog.ErrorContext(ctx, "error during OpenTelemetry shutdown", slog.Any("error", err))
 			}
 		}()
 	}
@@ -170,7 +179,7 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	h := humachi.New(router, huma.DefaultConfig("Ponrove Backend API", "1.0.0"))
 
 	if err := register(cfg, router, h); err != nil {
-		log.Error().Err(err).Msg("Failed to register routes")
+		slog.ErrorContext(ctx, "Failed to register routes", slog.Any("error", err))
 		return err
 	}
 
@@ -185,13 +194,13 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 
 	// Wrap the main router with OpenTelemetry HTTP instrumentation if enabled
 	if otelShutdown != nil { // otelShutdown check ensures setup was successful
-		log.Info().Msg("Wrapping HTTP handler with OpenTelemetry instrumentation.")
+		slog.InfoContext(ctx, "Wrapping HTTP handler with OpenTelemetry instrumentation.")
 		srv.Handler = otelhttp.NewHandler(router, "http.server")
 	}
 
 	srvListenAndServeErrChan := make(chan error, 1)
 	go func() {
-		log.Info().Msgf("Starting server on %s", srv.Addr)
+		slog.InfoContext(ctx, "Starting server", slog.String("address", srv.Addr))
 		// ListenAndServe blocks until the server is shut down.
 		// It returns http.ErrServerClosed if Shutdown is called successfully.
 		lsErr := srv.ListenAndServe()
@@ -199,8 +208,8 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 			srvListenAndServeErrChan <- lsErr
 		} else {
 			// If http.ErrServerClosed or nil, server stopped as expected.
-			log.Info().Msgf("ListenAndServe returned: %v", lsErr)
-			close(srvListenAndServeErrChan) // Signal clean exit or expected closure by closing the channel.
+			slog.InfoContext(ctx, "ListenAndServe returned", slog.Any("error", lsErr)) // slog.Any handles nil error gracefully
+			close(srvListenAndServeErrChan)                                            // Signal clean exit or expected closure by closing the channel.
 		}
 	}()
 
@@ -209,12 +218,12 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	case err, ok := <-srvListenAndServeErrChan:
 		if ok { // An actual error was sent from ListenAndServe (channel not closed).
 			listenAndServeError = err
-			log.Error().Err(listenAndServeError).Msg("Server stopped due to an error from ListenAndServe.")
+			slog.ErrorContext(ctx, "Server stopped due to an error from ListenAndServe.", slog.Any("error", listenAndServeError))
 		} else { // Channel closed: ListenAndServe returned nil or http.ErrServerClosed.
-			log.Info().Msg("Server stopped (ListenAndServe returned nil or http.ErrServerClosed before any signal).")
+			slog.InfoContext(ctx, "Server stopped (ListenAndServe returned nil or http.ErrServerClosed before any signal).")
 		}
 	case <-serverCtx.Done(): // OS signal received. serverCtx is now canceled.
-		log.Info().Msg("Shutdown signal received. serverCtx is Done. Proceeding to shutdown.")
+		slog.InfoContext(ctx, "Shutdown signal received. serverCtx is Done. Proceeding to shutdown.")
 		// stopSignalNotify() is deferred. It will clean up signal handling.
 		// If we call stopSignalNotify() here, it ensures no new signals for this NotifyContext are processed during shutdown.
 		// This can be useful if shutdown is lengthy. signal.Stop is safe to call multiple times.
@@ -222,14 +231,14 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	}
 
 	// Proceed with shutdown logic regardless of how the select statement was exited.
-	log.Info().Msg("Initiating shutdown procedure via handleShutdown...")
+	slog.InfoContext(ctx, "Initiating shutdown procedure via handleServerShutdown...")
 	shutdownTimeout := time.Duration(cfg.Int64(SERVER_SHUTDOWN_TIMEOUT)) * time.Second
 	shutdownErr := handleServerShutdown(context.Background(), srv, shutdownTimeout)
 
 	if listenAndServeError != nil {
 		// If ListenAndServe failed, that's the primary error to return.
 		if shutdownErr != nil {
-			log.Error().Err(shutdownErr).Msg("Additional error during shutdown attempt after ListenAndServe failure.")
+			slog.ErrorContext(ctx, "Additional error during shutdown attempt after ListenAndServe failure.", slog.Any("error", shutdownErr))
 		}
 		return listenAndServeError
 	}

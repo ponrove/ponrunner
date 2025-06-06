@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,9 +16,9 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ponrove/configura"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	slogctx "github.com/veqryn/slog-context"
 )
 
 func defaultLogRequestConfig() configura.Config {
@@ -30,113 +33,139 @@ func defaultLogRequestConfig() configura.Config {
 		REQUEST_LOG_FIELD_REFERER:        "referer",
 		REQUEST_LOG_FIELD_PROTOCOL:       "protocol",
 		REQUEST_LOG_FIELD_REQUEST_ID:     "requestID",
+		REQUEST_LOG_FIELD_REAL_IP:        "realIP", // Ensure this is part of the default config
 	}
 	return cfg
 }
 
+// logOutput defines the structure for unmarshaling slog's JSON output.
+// JSON tags must match the keys used in LogRequest, which are derived from
+// defaultLogRequestConfig or hardcoded (like "statusCode", "responseSize").
 type logOutput struct {
-	Level         string  `json:"level"`
-	Duration      float64 `json:"duration"` // zerolog logs duration in ms by default
-	RequestMethod string  `json:"requestMethod"`
-	RequestURL    string  `json:"requestURL"`
-	UserAgent     string  `json:"userAgent"`
-	RequestSize   string  `json:"requestSize"`
-	RemoteIP      string  `json:"remoteIP"`
-	Referer       string  `json:"referer"`
-	Protocol      string  `json:"protocol"`
-	RequestID     string  `json:"requestID"`
-	Message       string  `json:"message"`
+	Time          string `json:"time"`           // Standard slog field
+	Level         string `json:"level"`          // Standard slog field
+	Msg           string `json:"msg"`            // Standard slog field
+	Duration      int64  `json:"duration"`       // Configured key (nanoseconds)
+	RequestMethod string `json:"requestMethod"`  // Configured key
+	RequestURL    string `json:"requestURL"`     // Configured key
+	StatusCode    int    `json:"statusCode"`     // Hardcoded key in LogRequest
+	ResponseSize  int    `json:"responseSize"`   // Hardcoded key in LogRequest
+	UserAgent     string `json:"userAgent"`      // Configured key
+	RequestSize   string `json:"requestSize"`    // Configured key
+	RemoteIP      string `json:"remoteIP"`       // Configured key
+	Referer       string `json:"referer"`        // Configured key
+	Protocol      string `json:"protocol"`       // Configured key
+	RequestID     string `json:"requestID"`      // Configured key
+	RealIP        string `json:"realIP"`         // Configured key
+}
+
+// Helper to get path from a full URL string for matching log messages
+func getPathFromURL(rawURL string) string {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		if strings.Contains(rawURL, "://") {
+			return ""
+		}
+		return rawURL
+	}
+	return parsedURL.Path
 }
 
 func TestLogRequest(t *testing.T) {
 	tests := []struct {
-		name               string
-		requestMethod      string
-		requestURL         string
-		requestBody        string
-		userAgent          string
-		remoteAddr         string
-		referer            string
-		protocol           string
-		handlerStatusCode  int
-		handlerBody        string
-		expectedLogMessage string
-		addRequestID       bool
-		customLogFields    map[string]string
+		name              string
+		requestMethod     string
+		requestURL        string
+		requestBody       string
+		userAgent         string
+		remoteAddr        string
+		referer           string
+		protocol          string
+		handlerStatusCode int
+		handlerBody       string
+		addRequestID      bool
+		customLogFields   map[string]string
 	}{
 		{
-			name:               "Simple GET request",
-			requestMethod:      http.MethodGet,
-			requestURL:         "/test/path?query=1",
-			userAgent:          "test-agent/1.0",
-			remoteAddr:         "192.0.2.1:12345",
-			referer:            "http://example.com",
-			protocol:           "HTTP/1.1",
-			handlerStatusCode:  http.StatusOK,
-			handlerBody:        "Hello, world!",
-			expectedLogMessage: "[GET][200] /test/path",
-			addRequestID:       true,
+			name:              "Simple GET request",
+			requestMethod:     http.MethodGet,
+			requestURL:        "/test/path?query=1",
+			userAgent:         "test-agent/1.0",
+			remoteAddr:        "192.0.2.1:12345",
+			referer:           "http://example.com",
+			protocol:          "HTTP/1.1",
+			handlerStatusCode: http.StatusOK,
+			handlerBody:       "Hello, world!",
+			addRequestID:      true,
 		},
 		{
-			name:               "POST request with body",
-			requestMethod:      http.MethodPost,
-			requestURL:         "/submit",
-			requestBody:        "some data",
-			userAgent:          "test-agent/2.0",
-			remoteAddr:         "198.51.100.2:54321",
-			protocol:           "HTTP/2.0",
-			handlerStatusCode:  http.StatusCreated,
-			handlerBody:        `{"id": 123}`,
-			expectedLogMessage: "[POST][201] /submit",
-			addRequestID:       true,
+			name:              "POST request with body",
+			requestMethod:     http.MethodPost,
+			requestURL:        "/submit",
+			requestBody:       "some data",
+			userAgent:         "test-agent/2.0",
+			remoteAddr:        "198.51.100.2:54321",
+			protocol:          "HTTP/2.0",
+			handlerStatusCode: http.StatusCreated,
+			handlerBody:       `{"id": 123}`,
+			addRequestID:      true,
 		},
 		{
-			name:               "Request with no explicit status code write (defaults to 200)",
-			requestMethod:      http.MethodGet,
-			requestURL:         "/implicit-ok",
-			handlerStatusCode:  0, // Will cause handler to not call WriteHeader explicitly
-			handlerBody:        "Implicit OK",
-			expectedLogMessage: "[GET][200] /implicit-ok",
-			addRequestID:       false,
+			name:              "Request with no explicit status code write (defaults to 200)",
+			requestMethod:     http.MethodGet,
+			requestURL:        "/implicit-ok",
+			handlerStatusCode: 0, // Will cause handler to not call WriteHeader explicitly
+			handlerBody:       "Implicit OK",
+			addRequestID:      false,
 		},
 		{
-			name:               "Request with custom fields added to logger in handler",
-			requestMethod:      http.MethodGet,
-			requestURL:         "/custom-log",
-			handlerStatusCode:  http.StatusOK,
-			handlerBody:        "custom log data",
-			expectedLogMessage: "[GET][200] /custom-log",
-			addRequestID:       true,
-			customLogFields:    map[string]string{"custom_field": "custom_value", "user_id": "123"},
+			name:              "Request with custom fields added to logger in handler",
+			requestMethod:     http.MethodGet,
+			requestURL:        "/custom-log",
+			handlerStatusCode: http.StatusOK,
+			handlerBody:       "custom log data",
+			addRequestID:      true,
+			customLogFields:   map[string]string{"custom_field": "custom_value", "user_id": "123"},
 		},
 		{
-			name:               "Request resulting in 500",
-			requestMethod:      http.MethodGet,
-			requestURL:         "/error",
-			handlerStatusCode:  http.StatusInternalServerError,
-			handlerBody:        "Internal Server Error",
-			expectedLogMessage: "[GET][500] /error",
-			addRequestID:       true,
+			name:              "Request resulting in 500",
+			requestMethod:     http.MethodGet,
+			requestURL:        "/error",
+			handlerStatusCode: http.StatusInternalServerError,
+			handlerBody:       "Internal Server Error",
+			addRequestID:      true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var logBuffer bytes.Buffer
-			logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+			// Create a slog logger that writes JSON to logBuffer
+			// Use a handler that doesn't add source by default to simplify output, unless needed.
+			handlerOpts := slog.HandlerOptions{Level: slog.LevelInfo}
+			testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &handlerOpts))
+
+			// The LogRequest middleware uses slog.Default() internally when initializing context logger.
+			// So, we set our testLogger as the default for this test case.
+			originalDefaultLogger := slog.Default()
+			slog.SetDefault(testLogger)
+			t.Cleanup(func() {
+				slog.SetDefault(originalDefaultLogger)
+			})
 
 			handlerCalled := false
 			mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				handlerCalled = true
 
-				// Add custom fields to logger if specified for the test case
 				if tc.customLogFields != nil {
-					currentLogger := zerolog.Ctx(r.Context())
-					l := currentLogger.With()
+					// Retrieve the logger pointer from context (set by LogRequest middleware)
+					currentSlogLoggerPtr := slogctx.FromCtx(r.Context()) // Returns *slog.Logger
+					slogArgs := make([]any, 0, len(tc.customLogFields)*2)
 					for k, v := range tc.customLogFields {
-						l = l.Str(k, v)
+						slogArgs = append(slogArgs, k, v)
 					}
-					*currentLogger = l.Logger() // Update the logger in context
+					// Update the logger instance that the context's pointer points to
+					*currentSlogLoggerPtr = *currentSlogLoggerPtr.With(slogArgs...)
 				}
 
 				if tc.handlerStatusCode != 0 {
@@ -151,14 +180,15 @@ func TestLogRequest(t *testing.T) {
 			req.Header.Set("Referer", tc.referer)
 			req.RemoteAddr = tc.remoteAddr
 			req.Proto = tc.protocol
+
 			if tc.requestBody != "" {
 				req.Header.Set("Content-Length", strconv.Itoa(len(tc.requestBody)))
+			} else {
+				// For empty body, ContentLength should be 0 for r.ContentLength to be correct
+				req.Header.Set("Content-Length", "0")
 			}
 
-			// Add logger to request context
-			ctx := logger.WithContext(req.Context())
-
-			// Add chi's request ID to context if needed
+			ctx := req.Context() // Start with the request's original context
 			var expectedRequestID string
 			if tc.addRequestID {
 				expectedRequestID = "test-request-id"
@@ -168,7 +198,8 @@ func TestLogRequest(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 
-			middlewareToTest := LogRequest(defaultLogRequestConfig())(mockHandler)
+			config := defaultLogRequestConfig()
+			middlewareToTest := LogRequest(config)(mockHandler)
 			middlewareToTest.ServeHTTP(rr, req)
 
 			// 1. Check if the handler was called
@@ -176,16 +207,10 @@ func TestLogRequest(t *testing.T) {
 
 			// 2. Check response status code and body
 			actualStatusCode := rr.Code
-			// If handler didn't set a status code, but wrote data, it defaults to 200
 			expectedHandlerStatusCode := tc.handlerStatusCode
 			if tc.handlerStatusCode == 0 && tc.handlerBody != "" {
 				expectedHandlerStatusCode = http.StatusOK
 			} else if tc.handlerStatusCode == 0 && tc.handlerBody == "" {
-				// If no status code and no body, it also defaults to 200
-				// This case might be tricky if the recorder defaults to 200 even if WriteHeader isn't called.
-				// For the captureResponseWriter, if Write is called before WriteHeader, statusCode becomes 200.
-				// If neither is called, statusCode remains 0, but recorder.Code will be 200.
-				// The LogRequest middleware *should* log the 200 that is eventually sent.
 				expectedHandlerStatusCode = http.StatusOK
 			}
 
@@ -196,16 +221,23 @@ func TestLogRequest(t *testing.T) {
 			logContent := logBuffer.String()
 			require.NotEmpty(t, logContent, "Log output should not be empty")
 
+			// t.Logf("Raw log output: %s", logContent) // For debugging
+
 			var loggedData logOutput
 			err := json.Unmarshal([]byte(logContent), &loggedData)
 			require.NoError(t, err, "Failed to unmarshal log output: %s", logContent)
 
-			assert.Equal(t, "info", loggedData.Level)
-			assert.Greater(t, loggedData.Duration, 0.0)                                  // Duration should be positive
-			assert.Less(t, loggedData.Duration, float64(1*time.Second/time.Millisecond)) // Sanity check: < 1s
+			assert.Equal(t, "INFO", loggedData.Level) // slog uses uppercase "INFO"
+			assert.NotEmpty(t, loggedData.Time, "Timestamp should be present")
+			// Duration is in nanoseconds for slog
+			assert.GreaterOrEqual(t, loggedData.Duration, int64(0), "Duration should be non-negative")
+			assert.Less(t, loggedData.Duration, int64(1*time.Second), "Duration sanity check: < 1s (logged in ns)")
 
 			assert.Equal(t, tc.requestMethod, loggedData.RequestMethod)
-			assert.Equal(t, tc.requestURL, loggedData.RequestURL)
+			assert.Equal(t, tc.requestURL, loggedData.RequestURL) // Full URL with query
+			assert.Equal(t, expectedHandlerStatusCode, loggedData.StatusCode)
+			assert.Equal(t, len(tc.handlerBody), loggedData.ResponseSize)
+
 			assert.Equal(t, tc.userAgent, loggedData.UserAgent)
 
 			expectedRequestSize := "0"
@@ -214,22 +246,29 @@ func TestLogRequest(t *testing.T) {
 			}
 			assert.Equal(t, expectedRequestSize, loggedData.RequestSize)
 
-			assert.Equal(t, tc.remoteAddr, loggedData.RemoteIP)
+			assert.Equal(t, tc.remoteAddr, loggedData.RemoteIP) // This is r.RemoteAddr
 			assert.Equal(t, tc.referer, loggedData.Referer)
 			assert.Equal(t, tc.protocol, loggedData.Protocol)
-			assert.Equal(t, tc.expectedLogMessage, loggedData.Message)
+
+			// The logged message is "HTTP request processed: METHOD /path"
+			expectedLogMessage := fmt.Sprintf("HTTP request processed: %s %s", tc.requestMethod, getPathFromURL(tc.requestURL))
+			assert.Equal(t, expectedLogMessage, loggedData.Msg)
+
+			// Assuming GetIPAddressFromContext (from log.go) returns "" if no specific headers (X-Real-IP, X-Forwarded-For) are set
+			assert.Equal(t, "", loggedData.RealIP, "RealIP should be empty as not set in test request headers")
 
 			if tc.addRequestID {
 				assert.Equal(t, expectedRequestID, loggedData.RequestID)
 			} else {
-				assert.Empty(t, loggedData.RequestID, "RequestID should be empty when not added")
+				// middleware.GetReqID returns "" if no ID is in context.
+				assert.Empty(t, loggedData.RequestID, "RequestID should be empty when not added by test")
 			}
 
 			// Check for custom fields
 			if tc.customLogFields != nil {
 				var fullLogMap map[string]any
 				err = json.Unmarshal([]byte(logContent), &fullLogMap)
-				require.NoError(t, err, "Failed to unmarshal full log output: %s", logContent)
+				require.NoError(t, err, "Failed to unmarshal full log output for custom fields: %s", logContent)
 				for k, v := range tc.customLogFields {
 					assert.Equal(t, v, fullLogMap[k], "Custom log field '%s' mismatch", k)
 				}

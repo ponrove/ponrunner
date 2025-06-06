@@ -13,7 +13,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/ponrove/configura"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -244,10 +243,10 @@ func TestStart_ListenAndServeFails(t *testing.T) {
 	busyPort := listener.Addr().(*net.TCPAddr).Port
 	defer listener.Close() // Keep the port busy for the duration of the test
 
-	log.Debug().Msgf("port: %v", busyPort)
+	t.Logf("Attempting to start server on busy port: %v", busyPort)
 
 	cfg := newDefaultCfg()
-	cfg.RegInt64[SERVER_PORT] = int64(busyPort) // Use a free port
+	cfg.RegInt64[SERVER_PORT] = int64(busyPort)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second) // Test timeout
 	defer cancel()
