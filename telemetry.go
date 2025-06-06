@@ -22,11 +22,12 @@ import (
 )
 
 const (
-	OTEL_ENABLED         configura.Variable[bool]   = "OTEL_ENABLED"
-	OTEL_LOGS_ENABLED    configura.Variable[bool]   = "OTEL_LOGS_ENABLED"
-	OTEL_METRICS_ENABLED configura.Variable[bool]   = "OTEL_METRICS_ENABLED"
-	OTEL_TRACES_ENABLED  configura.Variable[bool]   = "OTEL_TRACES_ENABLED"
-	OTEL_SERVICE_NAME    configura.Variable[string] = "OTEL_SERVICE_NAME"
+	OTEL_ENABLED                configura.Variable[bool]   = "OTEL_ENABLED"
+	OTEL_LOGS_ENABLED           configura.Variable[bool]   = "OTEL_LOGS_ENABLED"
+	OTEL_METRICS_ENABLED        configura.Variable[bool]   = "OTEL_METRICS_ENABLED"
+	OTEL_TRACES_ENABLED         configura.Variable[bool]   = "OTEL_TRACES_ENABLED"
+	OTEL_SERVICE_NAME           configura.Variable[string] = "OTEL_SERVICE_NAME"
+	OTEL_EXPORTER_OTLP_ENDPOINT configura.Variable[string] = "OTEL_EXPORTER_OTLP_ENDPOINT" // Not used in this example, but can be configured
 )
 
 // shutdownFunc is a type for functions that perform cleanup.
@@ -111,6 +112,7 @@ func setupOTelSDK(ctx context.Context, cfg configura.Config) (shutdownFunc, erro
 		OTEL_METRICS_ENABLED,
 		OTEL_TRACES_ENABLED,
 		OTEL_SERVICE_NAME,
+		OTEL_EXPORTER_OTLP_ENDPOINT,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "OpenTelemetry configuration keys missing", slog.Any("error", err))
