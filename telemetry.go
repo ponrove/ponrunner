@@ -43,10 +43,10 @@ const (
 	OTEL_EXPORTER_OTLP_TRACES_HEADERS   configura.Variable[string] = "OTEL_EXPORTER_OTLP_TRACES_HEADERS"
 	OTEL_EXPORTER_OTLP_METRICS_HEADERS  configura.Variable[string] = "OTEL_EXPORTER_OTLP_METRICS_HEADERS"
 	OTEL_EXPORTER_OTLP_LOGS_HEADERS     configura.Variable[string] = "OTEL_EXPORTER_OTLP_LOGS_HEADERS"
-	OTEL_EXPORTER_OTLP_TIMEOUT          configura.Variable[string] = "OTEL_EXPORTER_OTLP_TIMEOUT"
-	OTEL_EXPORTER_OTLP_TRACES_TIMEOUT   configura.Variable[string] = "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT"
-	OTEL_EXPORTER_OTLP_METRICS_TIMEOUT  configura.Variable[string] = "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"
-	OTEL_EXPORTER_OTLP_LOGS_TIMEOUT     configura.Variable[string] = "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"
+	OTEL_EXPORTER_OTLP_TIMEOUT          configura.Variable[int64]  = "OTEL_EXPORTER_OTLP_TIMEOUT"
+	OTEL_EXPORTER_OTLP_TRACES_TIMEOUT   configura.Variable[int64]  = "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT"
+	OTEL_EXPORTER_OTLP_METRICS_TIMEOUT  configura.Variable[int64]  = "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"
+	OTEL_EXPORTER_OTLP_LOGS_TIMEOUT     configura.Variable[int64]  = "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"
 	OTEL_EXPORTER_OTLP_PROTOCOL         configura.Variable[string] = "OTEL_EXPORTER_OTLP_PROTOCOL"
 	OTEL_EXPORTER_OTLP_TRACES_PROTOCOL  configura.Variable[string] = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
 	OTEL_EXPORTER_OTLP_METRICS_PROTOCOL configura.Variable[string] = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
@@ -71,19 +71,6 @@ func parseHeaders(headerStr string) map[string]string {
 		}
 	}
 	return headers
-}
-
-// Helper function to parse duration strings (e.g., "5s")
-func parseDuration(durationStr string, defaultDuration time.Duration) time.Duration {
-	if durationStr == "" {
-		return defaultDuration
-	}
-	d, err := time.ParseDuration(durationStr)
-	if err != nil {
-		slog.Warn("Failed to parse duration string, using default", slog.String("duration_string", durationStr), slog.Any("error", err), slog.Duration("default_duration", defaultDuration))
-		return defaultDuration
-	}
-	return d
 }
 
 // shutdownFunc is a type for functions that perform cleanup.
@@ -310,7 +297,7 @@ func newTracerProvider(ctx context.Context, res *resource.Resource, cfg configur
 			slog.WarnContext(ctx, "OTLP exporter is enabled but no endpoint is configured for traces. Falling back to stdout trace exporter.")
 		} else {
 			headers := parseHeaders(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_TRACES_HEADERS), cfg.String(OTEL_EXPORTER_OTLP_HEADERS)))
-			timeout := parseDuration(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_TRACES_TIMEOUT), cfg.String(OTEL_EXPORTER_OTLP_TIMEOUT)), 10*time.Second)
+			timeout := configura.Fallback(time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_TRACES_TIMEOUT))*time.Second, time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_TIMEOUT))*time.Second)
 
 			slog.InfoContext(ctx, "Configuring OTLP trace exporter.",
 				slog.String("protocol", protocol),
@@ -389,7 +376,7 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg configura
 			slog.WarnContext(ctx, "OTLP exporter is enabled but no endpoint is configured for metrics. Falling back to stdout metric exporter.")
 		} else {
 			headers := parseHeaders(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_METRICS_HEADERS), cfg.String(OTEL_EXPORTER_OTLP_HEADERS)))
-			timeout := parseDuration(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_METRICS_TIMEOUT), cfg.String(OTEL_EXPORTER_OTLP_TIMEOUT)), 10*time.Second)
+			timeout := configura.Fallback(time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_METRICS_TIMEOUT))*time.Second, time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_METRICS_TIMEOUT))*time.Second)
 
 			slog.InfoContext(ctx, "Configuring OTLP metric exporter.",
 				slog.String("protocol", protocol),
@@ -469,7 +456,7 @@ func newLoggerProvider(ctx context.Context, res *resource.Resource, cfg configur
 			slog.WarnContext(ctx, "OTLP exporter is enabled but no endpoint is configured for logs. Falling back to stdout log exporter.")
 		} else {
 			headers := parseHeaders(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_LOGS_HEADERS), cfg.String(OTEL_EXPORTER_OTLP_HEADERS)))
-			timeout := parseDuration(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_LOGS_TIMEOUT), cfg.String(OTEL_EXPORTER_OTLP_TIMEOUT)), 10*time.Second)
+			timeout := configura.Fallback(time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_LOGS_TIMEOUT))*time.Second, time.Duration(cfg.Int64(OTEL_EXPORTER_OTLP_TIMEOUT))*time.Second)
 
 			slog.InfoContext(ctx, "Configuring OTLP log exporter.",
 				slog.String("protocol", protocol),

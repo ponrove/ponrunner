@@ -34,7 +34,7 @@ func newDefaultCfg() *configura.ConfigImpl {
 	cfg.RegBool[OTEL_EXPORTER_ENABLED] = false
 	cfg.RegString[OTEL_EXPORTER_OTLP_ENDPOINT] = ""
 	cfg.RegString[OTEL_EXPORTER_OTLP_PROTOCOL] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_TIMEOUT] = "5s"
+	cfg.RegInt64[OTEL_EXPORTER_OTLP_TIMEOUT] = 5
 	cfg.RegString[OTEL_EXPORTER_OTLP_HEADERS] = "x-ponrove-tenant-id=default"
 	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_ENDPOINT] = ""
 	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_ENDPOINT] = ""
@@ -42,9 +42,9 @@ func newDefaultCfg() *configura.ConfigImpl {
 	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_PROTOCOL] = ""
 	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_PROTOCOL] = ""
 	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_PROTOCOL] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_TIMEOUT] = "5s"
-	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_TIMEOUT] = "5s"
-	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_TIMEOUT] = "5s"
+	cfg.RegInt64[OTEL_EXPORTER_OTLP_TRACES_TIMEOUT] = 5
+	cfg.RegInt64[OTEL_EXPORTER_OTLP_METRICS_TIMEOUT] = 5
+	cfg.RegInt64[OTEL_EXPORTER_OTLP_LOGS_TIMEOUT] = 5
 	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_HEADERS] = "x-ponrove-tenant-id=default"
 	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_HEADERS] = "x-ponrove-tenant-id=default"
 	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_HEADERS] = "x-ponrove-tenant-id=default"
