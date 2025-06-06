@@ -19,6 +19,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newDefaultCfg() *configura.ConfigImpl {
+	cfg := configura.NewConfigImpl()
+	cfg.RegInt64[SERVER_PORT] = 8080
+	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1
+	cfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1
+	cfg.RegInt64[SERVER_READ_TIMEOUT] = 1
+	cfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1
+	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"
+	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080"
+	cfg.RegBool[OTEL_ENABLED] = false
+	cfg.RegBool[OTEL_LOGS_ENABLED] = true
+	cfg.RegBool[OTEL_METRICS_ENABLED] = true
+	cfg.RegBool[OTEL_TRACES_ENABLED] = true
+	cfg.RegString[OTEL_SERVICE_NAME] = "ponrunner-test"
+	cfg.RegString[SERVER_LOG_LEVEL] = "debug"
+	cfg.RegString[SERVER_LOG_FORMAT] = "json"
+	return cfg
+}
+
 // MockServerControl is a mock type for the serverControl interface
 type MockServerControl struct {
 	mock.Mock
@@ -44,7 +63,7 @@ func TestHandleShutdown_Successful(t *testing.T) {
 	// Expect Shutdown to be called with a context that has a deadline derived from shutdownTimeout
 	mockSrv.On("Shutdown", mock.AnythingOfType("*context.timerCtx")).Return(nil).Once()
 
-	err := handleShutdown(ctx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(ctx, mockSrv, shutdownTimeout)
 
 	assert.NoError(t, err)
 	mockSrv.AssertExpectations(t)
@@ -58,7 +77,7 @@ func TestHandleShutdown_ShutdownError(t *testing.T) {
 
 	mockSrv.On("Shutdown", mock.AnythingOfType("*context.timerCtx")).Return(expectedErr).Once()
 
-	err := handleShutdown(ctx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(ctx, mockSrv, shutdownTimeout)
 
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)
@@ -72,7 +91,7 @@ func TestHandleShutdown_AlreadyClosed(t *testing.T) {
 
 	mockSrv.On("Shutdown", mock.AnythingOfType("*context.timerCtx")).Return(http.ErrServerClosed).Once()
 
-	err := handleShutdown(ctx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(ctx, mockSrv, shutdownTimeout)
 
 	assert.NoError(t, err) // ErrServerClosed is treated as a successful shutdown
 	mockSrv.AssertExpectations(t)
@@ -93,7 +112,7 @@ func TestHandleShutdown_Timeout(t *testing.T) {
 		Return(context.DeadlineExceeded). // http.Server.Shutdown returns ctx.Err() when its context is done.
 		Once()
 
-	err := handleShutdown(ctx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(ctx, mockSrv, shutdownTimeout)
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.DeadlineExceeded), "Expected context.DeadlineExceeded, got %v", err)
@@ -122,7 +141,7 @@ func TestHandleShutdown_ParentContextCancellation(t *testing.T) {
 		cancelParent()                    // This cancellation should propagate to shutdownOpCtx
 	}()
 
-	err := handleShutdown(parentCtx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(parentCtx, mockSrv, shutdownTimeout)
 
 	assert.Error(t, err)
 	// The error returned by srv.Shutdown when its context is canceled is context.Canceled or context.DeadlineExceeded.
@@ -147,7 +166,7 @@ func TestHandleShutdown_ZeroShutdownTimeout(t *testing.T) {
 		Return(context.DeadlineExceeded). // http.Server.Shutdown would return ctx.Err().
 		Once()
 
-	err := handleShutdown(ctx, mockSrv, shutdownTimeout)
+	err := handleServerShutdown(ctx, mockSrv, shutdownTimeout)
 
 	assert.Error(t, err)
 	// Expect DeadlineExceeded because WithTimeout(parent, 0) results in a context that is immediately done with DeadlineExceeded.
@@ -172,18 +191,10 @@ func getFreePort() (int, error) {
 func TestStart_SuccessfulShutdown(t *testing.T) {
 	t.Parallel()
 
-	mockCfg := configura.NewConfigImpl()
+	cfg := newDefaultCfg()
 	freePort, err := getFreePort()
 	require.NoError(t, err, "Failed to get free port")
-
-	mockCfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
-	// Short timeouts for test speed, but long enough for operations.
-	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1                                 // 1 second request timeout
-	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1                                // 1 second shutdown timeout
-	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1                                    // 1 second read timeout
-	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1                                   // 1 second write timeout
-	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"      // Set a valid provider name
-	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080" // Set a valid provider URL
+	cfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
 
 	ctx, cancel := context.WithCancel(context.Background())
 	startErrChan := make(chan error, 1)
@@ -191,7 +202,7 @@ func TestStart_SuccessfulShutdown(t *testing.T) {
 	r := chi.NewRouter()
 	go func() {
 		// We expect Start to return nil on successful graceful shutdown.
-		startErrChan <- Start(ctx, mockCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+		startErrChan <- Start(ctx, cfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
 			return nil
 		})
 	}()
@@ -235,21 +246,14 @@ func TestStart_ListenAndServeFails(t *testing.T) {
 
 	log.Debug().Msgf("port: %v", busyPort)
 
-	mockCfg := configura.NewConfigImpl()
-	mockCfg.RegInt64[SERVER_PORT] = int64(busyPort) // Use a free port
-	// Short timeouts for test speed, but long enough for operations.
-	mockCfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1                                 // 1 second request timeout
-	mockCfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1                                // 1 second shutdown timeout
-	mockCfg.RegInt64[SERVER_READ_TIMEOUT] = 1                                    // 1 second read timeout
-	mockCfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1                                   // 1 second write timeout
-	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"      // Set a valid provider name
-	mockCfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080" // Set a valid provider URL
+	cfg := newDefaultCfg()
+	cfg.RegInt64[SERVER_PORT] = int64(busyPort) // Use a free port
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second) // Test timeout
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, mockCfg, r, func(c configura.Config, r chi.Router, a huma.API) error { return nil })
+	runErr := Start(ctx, cfg, r, func(c configura.Config, r chi.Router, a huma.API) error { return nil })
 
 	assert.Error(t, runErr, "Start should return an error if ListenAndServe fails")
 	// Check if the error is a bind error (OS-dependent message)
@@ -265,30 +269,25 @@ func TestStart_ListenAndServeFails(t *testing.T) {
 	}
 }
 
-func testBundle(cfg configura.Config, api huma.API) error {
-	if cfg == nil {
-		return fmt.Errorf("configuration is nil")
-	}
-	if api == nil {
-		return fmt.Errorf("API bundle is nil")
-	}
-	return nil
-}
-
 func TestStart_APIBundleRegistrationFails(t *testing.T) {
 	t.Parallel()
+	const unset_fake_configuration_flag configura.Variable[bool] = "unset_fake_configuration_flag"
 
-	mockCfg := configura.NewConfigImpl()
+	testBundle := func(cfg configura.Config, api huma.API) error {
+		return cfg.ConfigurationKeysRegistered(unset_fake_configuration_flag)
+	}
+
+	cfg := newDefaultCfg()
 	freePort, err := getFreePort()
 	require.NoError(t, err, "Failed to get free port")
 
-	mockCfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
+	cfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // Test timeout
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, mockCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+	runErr := Start(ctx, cfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
 		return RegisterAPIBundles(cfg, a, testBundle)
 	})
 

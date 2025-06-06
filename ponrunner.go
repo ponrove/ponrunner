@@ -15,15 +15,19 @@ import (
 	chim "github.com/go-chi/chi/v5/middleware"
 	"github.com/ponrove/configura"
 	"github.com/ponrove/ponrunner/middleware"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
-	SERVER_PORT             configura.Variable[int64] = "SERVER_PORT"
-	SERVER_WRITE_TIMEOUT    configura.Variable[int64] = "SERVER_REQUEST_TIMEOUT"
-	SERVER_READ_TIMEOUT     configura.Variable[int64] = "SERVER_READ_TIMEOUT"
-	SERVER_REQUEST_TIMEOUT  configura.Variable[int64] = "SERVER_REQUEST_TIMEOUT"
-	SERVER_SHUTDOWN_TIMEOUT configura.Variable[int64] = "SERVER_SHUTDOWN_TIMEOUT"
+	SERVER_PORT             configura.Variable[int64]  = "SERVER_PORT"
+	SERVER_WRITE_TIMEOUT    configura.Variable[int64]  = "SERVER_REQUEST_TIMEOUT"
+	SERVER_READ_TIMEOUT     configura.Variable[int64]  = "SERVER_READ_TIMEOUT"
+	SERVER_REQUEST_TIMEOUT  configura.Variable[int64]  = "SERVER_REQUEST_TIMEOUT"
+	SERVER_SHUTDOWN_TIMEOUT configura.Variable[int64]  = "SERVER_SHUTDOWN_TIMEOUT"
+	SERVER_LOG_LEVEL        configura.Variable[string] = "SERVER_LOG_LEVEL"
+	SERVER_LOG_FORMAT       configura.Variable[string] = "SERVER_LOG_FORMAT"
 )
 
 // APIBundle is a function type that takes a configura.Config and huma.API,
@@ -46,10 +50,10 @@ type serverControl interface {
 	Shutdown(ctx context.Context) error
 }
 
-// handleShutdown performs a graceful shutdown of an HTTP server-like component.
+// handleServerShutdown performs a graceful shutdown of an HTTP server-like component.
 // It takes a parent context (for the shutdown operation itself),
 // the server component to shut down, and a timeout duration for the shutdown process.
-func handleShutdown(shutdownParentCtx context.Context, srv serverControl, shutdownTimeout time.Duration) error {
+func handleServerShutdown(shutdownParentCtx context.Context, srv serverControl, shutdownTimeout time.Duration) error {
 	log.Info().Msg("Initiating server shutdown sequence...")
 
 	// Create a context with a timeout for the srv.Shutdown call.
@@ -87,6 +91,8 @@ type RegisterRoutes func(configura.Config, chi.Router, huma.API) error
 // Start initializes and starts the Ponrove server. It sets up the HTTP server with the provided configuration and API
 // bundles, and handles graceful shutdown on receiving OS signals.
 func Start(ctx context.Context, cfg configura.Config, router chi.Router, register RegisterRoutes) error {
+	// Ensure the configuration contains all required keys, it's up to the caller to ensure that the configuration
+	// is loaded with the necessary values before calling Start.
 	err := cfg.ConfigurationKeysRegistered(
 		SERVER_PORT,
 		SERVER_REQUEST_TIMEOUT,
@@ -95,15 +101,58 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 		SERVER_SHUTDOWN_TIMEOUT,
 		SERVER_OPENFEATURE_PROVIDER_NAME,
 		SERVER_OPENFEATURE_PROVIDER_URL,
+		SERVER_LOG_LEVEL,
+		SERVER_LOG_FORMAT,
 	)
 	if err != nil {
 		return err
 	}
 
+	// Set up the logger based on the configuration.
+	logLevel := configura.Fallback(cfg.String(SERVER_LOG_LEVEL), "info")
+	switch logLevel {
+	case "trace":
+		log.Logger = log.Logger.Level(zerolog.TraceLevel)
+	case "debug":
+		log.Logger = log.Logger.Level(zerolog.DebugLevel)
+	case "info":
+		log.Logger = log.Logger.Level(zerolog.InfoLevel)
+	case "warn":
+		log.Logger = log.Logger.Level(zerolog.WarnLevel)
+	case "error":
+		log.Logger = log.Logger.Level(zerolog.ErrorLevel)
+	case "fatal":
+		log.Logger = log.Logger.Level(zerolog.FatalLevel)
+	case "panic":
+		log.Logger = log.Logger.Level(zerolog.PanicLevel)
+	case "nolevel":
+		log.Logger = log.Logger.Level(zerolog.NoLevel) // NoLevel means no logging.
+	case "disabled":
+		log.Logger = log.Logger.Level(zerolog.Disabled) // Disabled means no logging.
+	default:
+		log.Logger = log.Logger.Level(zerolog.InfoLevel) // Default to Info level if not recognized.
+	}
+
+	// Set the open feature provider if configured.
 	err = setOpenFeatureProvider(cfg)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to set OpenFeature provider")
+		log.Error().Err(err).Msg("Failed to set OpenFeature provider")
 		return err // Return early if OpenFeature provider setup fails.
+	}
+
+	// Initialize OpenTelemetry if enabled
+	otelShutdown, otelSetupErr := setupOTelSDK(ctx, cfg)
+	if otelSetupErr != nil {
+		return fmt.Errorf("Failed to setup OpenTelemetry SDK: %w", otelSetupErr)
+	} else {
+		log.Info().Msg("OpenTelemetry SDK initialized successfully.")
+		// Defer the shutdown of OpenTelemetry to ensure it's called on exit.
+		// Use a background context for shutdown as the main context might be canceled.
+		defer func() {
+			if err := otelShutdown(context.Background()); err != nil {
+				log.Error().Err(err).Msg("error during OpenTelemetry shutdown")
+			}
+		}()
 	}
 
 	// serverCtx is canceled when an OS signal is received, used for server's BaseContext.
@@ -121,8 +170,8 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	h := humachi.New(router, huma.DefaultConfig("Ponrove Backend API", "1.0.0"))
 
 	if err := register(cfg, router, h); err != nil {
-		log.Error().Err(err).Msg("failed to register routes")
-		return err // Return early if API bundle registration fails.
+		log.Error().Err(err).Msg("Failed to register routes")
+		return err
 	}
 
 	srv := &http.Server{ // Use a pointer to satisfy serverControl if http.Server is passed directly.
@@ -131,12 +180,18 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 		BaseContext:  func(_ net.Listener) context.Context { return serverCtx },
 		ReadTimeout:  time.Duration(cfg.Int64(SERVER_READ_TIMEOUT)) * time.Second,
 		WriteTimeout: time.Duration(cfg.Int64(SERVER_WRITE_TIMEOUT)) * time.Second,
-		Handler:      router,
+		Handler:      router, // This will be wrapped if OTel is enabled
+	}
+
+	// Wrap the main router with OpenTelemetry HTTP instrumentation if enabled
+	if otelShutdown != nil { // otelShutdown check ensures setup was successful
+		log.Info().Msg("Wrapping HTTP handler with OpenTelemetry instrumentation.")
+		srv.Handler = otelhttp.NewHandler(router, "http.server")
 	}
 
 	srvListenAndServeErrChan := make(chan error, 1)
 	go func() {
-		log.Info().Msgf("starting server on %s", srv.Addr)
+		log.Info().Msgf("Starting server on %s", srv.Addr)
 		// ListenAndServe blocks until the server is shut down.
 		// It returns http.ErrServerClosed if Shutdown is called successfully.
 		lsErr := srv.ListenAndServe()
@@ -144,23 +199,22 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 			srvListenAndServeErrChan <- lsErr
 		} else {
 			// If http.ErrServerClosed or nil, server stopped as expected.
-			log.Info().Msgf("listenAndServe returned: %v", lsErr)
+			log.Info().Msgf("ListenAndServe returned: %v", lsErr)
 			close(srvListenAndServeErrChan) // Signal clean exit or expected closure by closing the channel.
 		}
 	}()
 
 	var listenAndServeError error
-	// Wait for either a shutdown signal (via serverCtx.Done()) or the server to stop on its own (error or graceful).
 	select {
 	case err, ok := <-srvListenAndServeErrChan:
 		if ok { // An actual error was sent from ListenAndServe (channel not closed).
 			listenAndServeError = err
 			log.Error().Err(listenAndServeError).Msg("Server stopped due to an error from ListenAndServe.")
 		} else { // Channel closed: ListenAndServe returned nil or http.ErrServerClosed.
-			log.Info().Msg("server stopped (ListenAndServe returned nil or http.ErrServerClosed before any signal).")
+			log.Info().Msg("Server stopped (ListenAndServe returned nil or http.ErrServerClosed before any signal).")
 		}
 	case <-serverCtx.Done(): // OS signal received. serverCtx is now canceled.
-		log.Info().Msg("shutdown signal received. serverCtx is Done. Proceeding to shutdown.")
+		log.Info().Msg("Shutdown signal received. serverCtx is Done. Proceeding to shutdown.")
 		// stopSignalNotify() is deferred. It will clean up signal handling.
 		// If we call stopSignalNotify() here, it ensures no new signals for this NotifyContext are processed during shutdown.
 		// This can be useful if shutdown is lengthy. signal.Stop is safe to call multiple times.
@@ -168,14 +222,14 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 	}
 
 	// Proceed with shutdown logic regardless of how the select statement was exited.
-	log.Info().Msg("initiating shutdown procedure via handleShutdown...")
+	log.Info().Msg("Initiating shutdown procedure via handleShutdown...")
 	shutdownTimeout := time.Duration(cfg.Int64(SERVER_SHUTDOWN_TIMEOUT)) * time.Second
-	shutdownErr := handleShutdown(context.Background(), srv, shutdownTimeout)
+	shutdownErr := handleServerShutdown(context.Background(), srv, shutdownTimeout)
 
 	if listenAndServeError != nil {
 		// If ListenAndServe failed, that's the primary error to return.
 		if shutdownErr != nil {
-			log.Error().Err(shutdownErr).Msg("additional error during shutdown attempt after ListenAndServe failure.")
+			log.Error().Err(shutdownErr).Msg("Additional error during shutdown attempt after ListenAndServe failure.")
 		}
 		return listenAndServeError
 	}
