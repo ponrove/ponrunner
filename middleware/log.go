@@ -1,13 +1,15 @@
 package middleware
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/ponrove/configura"
-	"github.com/rs/zerolog"
+	slogctx "github.com/veqryn/slog-context"
 )
 
 // Custom response writer to capture the status code and response size, for logging.
@@ -55,30 +57,32 @@ func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 
-			// Fetch a logger from context (or default logger), and make a child logger from it.
-			childLogger := zerolog.Ctx(r.Context()).With().Logger()
-
 			// Add the logger to the request context, to pass it downstream.
-			r = r.WithContext(childLogger.WithContext(r.Context()))
+			r = r.WithContext(slogctx.NewCtx(r.Context(), slog.Default()))
 
 			// Wrap the response writer to capture the status code and response size, on writes.
 			crw := &captureResponseWriter{ResponseWriter: w}
 			next.ServeHTTP(crw, r)
 
-			// Fetch logger from context, potentially has new fields and contextual data added by the endpoints.
-			postLogger := zerolog.Ctx(r.Context())
-			postLogger.Info().
-				Dur(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())).
-				Str(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())).
-				Msgf("[%s][%d] %s", r.Method, crw.statusCode, r.URL.Path)
+			// Fetch logger from context. It will include any attributes added by slogctx throughout the request.
+			// If no logger is in context, it falls back to slog.Default().
+			logger := slogctx.FromCtx(r.Context())
+
+			logger.LogAttrs(r.Context(), slog.LevelInfo,
+				fmt.Sprintf("HTTP request processed: %s %s", r.Method, r.URL.Path),
+				slog.Duration(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()),
+				slog.Int("statusCode", crw.statusCode), // Added status code directly
+				slog.Int("responseSize", crw.size),     // Added response size directly
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())),
+			)
 		})
 	}
 }

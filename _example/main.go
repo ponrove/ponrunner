@@ -23,7 +23,7 @@ func main() {
 	os.Setenv(string(ponrunner.SERVER_READ_TIMEOUT), "5")
 	os.Setenv(string(ponrunner.SERVER_REQUEST_TIMEOUT), "5")
 	os.Setenv(string(ponrunner.SERVER_SHUTDOWN_TIMEOUT), "5")
-
+	os.Setenv(string(ponrunner.OTEL_ENABLED), "true")
 	// Initialize Configuration with configura
 	cfg := configura.NewConfigImpl()
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, 8080)                                // Fallback port 8080
@@ -33,9 +33,18 @@ func main() {
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_SHUTDOWN_TIMEOUT, int64(5))                // Fallback shutdown timeout 5 seconds
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME, "NoopProvider") // Fallback to NoopProvider
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_URL, "")              // No URL for NoopProvider
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_ENABLED, false)                              // Disable OpenTelemetry by default
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_LOGS_ENABLED, true)                          // Enable OpenTelemetry logs by default
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_METRICS_ENABLED, true)
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_TRACES_ENABLED, true)
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_SERVICE_NAME, "example-service")
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_LEVEL, "info")
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_FORMAT, "json")
 
 	r := chi.NewRouter()
-	err := ponrunner.Start(ctx, cfg, r, MyAPIBundle)
+	err := ponrunner.Start(ctx, cfg, r, func(c configura.Config, r chi.Router, a huma.API) error {
+		return ponrunner.RegisterAPIBundles(c, a, MyAPIBundle)
+	})
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
