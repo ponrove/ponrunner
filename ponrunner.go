@@ -22,7 +22,7 @@ import (
 
 const (
 	SERVER_PORT             configura.Variable[int64]  = "SERVER_PORT"
-	SERVER_WRITE_TIMEOUT    configura.Variable[int64]  = "SERVER_REQUEST_TIMEOUT"
+	SERVER_WRITE_TIMEOUT    configura.Variable[int64]  = "SERVER_WRITE_TIMEOUT"
 	SERVER_READ_TIMEOUT     configura.Variable[int64]  = "SERVER_READ_TIMEOUT"
 	SERVER_REQUEST_TIMEOUT  configura.Variable[int64]  = "SERVER_REQUEST_TIMEOUT"
 	SERVER_SHUTDOWN_TIMEOUT configura.Variable[int64]  = "SERVER_SHUTDOWN_TIMEOUT"
@@ -172,8 +172,8 @@ func Start(ctx context.Context, cfg configura.Config, router chi.Router, registe
 		middleware.IPAddress(cfg), // Adds the client's IP address to the request context.
 		chim.RequestID,            // Adds a unique request ID to each request.
 		chim.Recoverer,
-		chim.Timeout(time.Duration(cfg.Int64(SERVER_REQUEST_TIMEOUT))*time.Second),
 		middleware.LogRequest(cfg), // Custom middleware to log requests.
+		chim.Timeout(time.Duration(cfg.Int64(SERVER_REQUEST_TIMEOUT))*time.Second),
 	)
 
 	h := humachi.New(router, huma.DefaultConfig("Ponrove Backend API", "1.0.0"))

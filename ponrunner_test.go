@@ -21,17 +21,16 @@ import (
 func newDefaultCfg() *configura.ConfigImpl {
 	cfg := configura.NewConfigImpl()
 	cfg.RegInt64[SERVER_PORT] = 8080
-	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1
-	cfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 1
-	cfg.RegInt64[SERVER_READ_TIMEOUT] = 1
-	cfg.RegInt64[SERVER_WRITE_TIMEOUT] = 1
+	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 30
+	cfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 30
+	cfg.RegInt64[SERVER_READ_TIMEOUT] = 30
+	cfg.RegInt64[SERVER_WRITE_TIMEOUT] = 30
 	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"
 	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080"
 	cfg.RegBool[OTEL_ENABLED] = false
 	cfg.RegBool[OTEL_LOGS_ENABLED] = true
 	cfg.RegBool[OTEL_METRICS_ENABLED] = true
 	cfg.RegBool[OTEL_TRACES_ENABLED] = true
-	cfg.RegBool[OTEL_EXPORTER_ENABLED] = false
 	cfg.RegString[OTEL_EXPORTER_OTLP_ENDPOINT] = ""
 	cfg.RegString[OTEL_EXPORTER_OTLP_PROTOCOL] = ""
 	cfg.RegInt64[OTEL_EXPORTER_OTLP_TIMEOUT] = 5
@@ -309,4 +308,54 @@ func TestStart_APIBundleRegistrationFails(t *testing.T) {
 
 	assert.Error(t, runErr)
 	assert.True(t, errors.Is(runErr, configura.ErrMissingVariable), "Start should return the error from API bundle registration. Got: %v", runErr)
+}
+
+func TestStart_RequestTimeout(t *testing.T) {
+	t.Parallel()
+
+	cfg := newDefaultCfg()
+	freePort, err := getFreePort()
+	require.NoError(t, err, "Failed to get free port")
+	cfg.RegInt64[SERVER_PORT] = int64(freePort)
+	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1 // 1 second timeout
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := chi.NewRouter()
+
+	go func() {
+		// We don't expect an error here for this test.
+		_ = Start(ctx, cfg, r, func(c configura.Config, router chi.Router, a huma.API) error {
+			// Register a route that takes longer to process than the timeout.
+			router.Get("/timeout", func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(5 * time.Second):
+					w.WriteHeader(http.StatusOK)
+				}
+			})
+			return nil
+		})
+	}()
+
+	// Wait for the server to start
+	serverAddr := fmt.Sprintf("localhost:%d", freePort)
+	require.Eventually(t, func() bool {
+		conn, err := net.Dial("tcp", serverAddr)
+		if err != nil {
+			return false
+		}
+		conn.Close()
+		return true
+	}, 2*time.Second, 50*time.Millisecond, "server never started")
+
+	// Make a request to the long-running endpoint
+	resp, err := http.Get(fmt.Sprintf("http://%s/timeout", serverAddr))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// chi.Timeout middleware returns a 504 Gateway Timeout status on timeout.
+	assert.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
 }
