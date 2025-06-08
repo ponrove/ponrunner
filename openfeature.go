@@ -31,7 +31,7 @@ func setOpenFeatureProvider(cfg configura.Config) error {
 
 	// If the provider URL is not set, we cannot initialize the provider. Return an error to indicate this.
 	if cfg.String(SERVER_OPENFEATURE_PROVIDER_URL) == "" {
-		return fmt.Errorf("%w: %s", ErrOpenFeatureProviderURLNotSet, cfg.String(SERVER_OPENFEATURE_PROVIDER_URL))
+		return fmt.Errorf("%w: %s is not set", ErrOpenFeatureProviderURLNotSet, cfg.String(SERVER_OPENFEATURE_PROVIDER_URL))
 	}
 	var err error
 
@@ -45,11 +45,14 @@ func setOpenFeatureProvider(cfg configura.Config) error {
 	switch cfg.String(SERVER_OPENFEATURE_PROVIDER_NAME) {
 	case "go-feature-flag":
 		// Currently, error can only occur if the URL is empty, which is handled above. Surpress the error here.
-		provider, _ = gofeatureflag.NewProvider(
+		provider, err = gofeatureflag.NewProvider(
 			gofeatureflag.ProviderOptions{
 				Endpoint: cfg.String(SERVER_OPENFEATURE_PROVIDER_URL),
 			},
 		)
+		if err != nil {
+			return fmt.Errorf("failed to create go-feature-flag provider: %w", err)
+		}
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedOpenFeatureProvider, cfg.String(SERVER_OPENFEATURE_PROVIDER_NAME))
 	}
