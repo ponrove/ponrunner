@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -15,15 +14,6 @@ import (
 
 func main() {
 	ctx := context.Background()
-
-	// --- Simulate setting environment variables (for example purposes) ---
-	// In a real scenario, these would be set in your shell, Dockerfile, K8s manifest, etc.
-	os.Setenv(string(ponrunner.SERVER_PORT), "8080")
-	os.Setenv(string(ponrunner.SERVER_WRITE_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_READ_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_REQUEST_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_SHUTDOWN_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.OTEL_ENABLED), "true")
 	// Initialize Configuration with configura
 	cfg := configura.NewConfigImpl()
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, 8080)                                // Fallback port 8080
@@ -38,8 +28,25 @@ func main() {
 	configura.LoadEnvironment(cfg, ponrunner.OTEL_METRICS_ENABLED, true)
 	configura.LoadEnvironment(cfg, ponrunner.OTEL_TRACES_ENABLED, true)
 	configura.LoadEnvironment(cfg, ponrunner.OTEL_SERVICE_NAME, "example-service")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_ENDPOINT, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_PROTOCOL, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_HEADERS, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_TIMEOUT, 10)
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_LOGS_HEADERS, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_LOGS_TIMEOUT, 10)
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_METRICS_HEADERS, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_METRICS_TIMEOUT, 10)
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_TRACES_PROTOCOL, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_TRACES_HEADERS, "")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_TRACES_TIMEOUT, 10)
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_LEVEL, "info")
 	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_FORMAT, "json")
+	configura.LoadEnvironment(cfg, ponrunner.OTEL_EXPORTER_OTLP_ENDPOINT, "")
 
 	r := chi.NewRouter()
 	err := ponrunner.Start(ctx, cfg, r, func(c configura.Config, r chi.Router, a huma.API) error {
