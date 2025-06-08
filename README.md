@@ -9,40 +9,70 @@
 
 `ponrunner` is a Go package designed to simplify the setup, execution, and graceful shutdown of HTTP servers. It seamlessly integrates with the [Chi router](https://github.com/go-chi/chi) and the [Huma v2 API framework](https://github.com/danielgtaylor/huma), promoting a configuration-driven approach using the [configura](https://github.com/ponrove/configura) package.
 
-With `ponrunner`, you can quickly bootstrap a robust server, allowing you to focus more on your API logic and less on boilerplate server code.
+With `ponrunner`, you can quickly bootstrap a robust, observable, and feature-flag-aware server, allowing you to focus more on your API logic and less on boilerplate code.
 
 **Key Features:**
 
 - **Simplified Server Lifecycle:** Easy-to-use `Start` function to initialize and run your server.
-- **Graceful Shutdown:** Handles OS signals (SIGHUP, SIGINT, SIGTERM, SIGQUIT) for a clean shutdown process, ensuring active requests are completed.
-- **Configuration Driven:** Leverages `configura` for managing server parameters like port and timeouts through environment variables or other sources.
-- **Chi & Huma Integration:** Built to work smoothly with Chi for routing and Huma for API definition and documentation.
-- **Modular API Bundles:** Define your API endpoints in self-contained `APIBundle` functions, promoting a clean and organized codebase.
-- **Middleware Ready:** Comes with sensible default middleware like request ID, request timeout, and structured request logging.
-- **Configurable Timeouts:** Set server read, write, request, and shutdown timeouts via configuration.
+- **Graceful Shutdown:** Handles OS signals for a clean shutdown process.
+- **Configuration Driven:** Leverages `configura` for managing all server parameters via environment variables.
+- **Observability Ready:** Built-in, configurable OpenTelemetry support for traces, metrics, and logs.
+- **Feature Flagging:** Integrated with [OpenFeature](https://openfeature.dev/) for dynamic feature management.
+- **Structured Logging:** Uses Go's standard `log/slog` for structured, leveled logging (JSON or text).
+- **Chi & Huma Integration:** Built to work smoothly with Chi for routing and Huma for API definition.
+- **Middleware Ready:** Comes with default middleware for request ID, request logging, IP address handling, and timeouts.
 
 ## Dependencies
 
+- [Go 1.21+](https://go.dev/dl/) (for `slog`)
 - [Chi](https://github.com/go-chi/chi/v5)
 - [Huma v2](https://github.com/danielgtaylor/huma/v2)
 - [Configura](https://github.com/ponrove/configura)
-- [Zerolog](https://github.com/rs/zerolog)
+- [OpenTelemetry](https://opentelemetry.io/)
+- [OpenFeature](https://openfeature.dev/)
+
+## Example: Full Observability Stack
+
+For a comprehensive example of how to run `ponrunner` with a full observability stack (including Grafana, Loki, Prometheus, Jaeger, and Tempo), please see the README in the example directory:
+
+➡️ **[Full Docker Compose Example](./_example/README.md)**
 
 ## Usage
 
-To use `ponrunner`, you'll typically define your API logic in one or more `APIBundle` functions, configure your server settings, and then call `ponrunner.Start`.
+### 1. Configuration Variables
 
-### 1. Define Configuration
+`ponrunner` is configured entirely through environment variables, which are loaded via the `configura` package.
 
-`ponrunner` expects certain configuration variables to be available through a `configura.Config` instance. You should define these in your application:
+#### Server & Logging
 
-- `SERVER_PORT`: The port on which the server will listen (e.g., `8080`).
-- `SERVER_REQUEST_TIMEOUT`: Maximum duration for processing a request (e.g., `15` seconds).
-  - _Note_: Due to the current definition of `SERVER_WRITE_TIMEOUT` in `ponrunner` (`configura.Variable[int64] = "SERVER_REQUEST_TIMEOUT"`), this value is also used for the HTTP server's `WriteTimeout`.
-- `SERVER_READ_TIMEOUT`: Maximum duration for reading the entire request, including the body (e.g., `10` seconds).
-- `SERVER_SHUTDOWN_TIMEOUT`: Maximum duration allowed for graceful shutdown (e.g., `30` seconds).
+- `SERVER_PORT`: The port for the server to listen on (e.g., `8080`).
+- `SERVER_REQUEST_TIMEOUT`: Max duration for a request (e.g., `15`).
+- `SERVER_READ_TIMEOUT`: Max duration for reading a request body (e.g., `10`).
+- `SERVER_WRITE_TIMEOUT`: Max duration for writing a response (e.g., `10`).
+- `SERVER_SHUTDOWN_TIMEOUT`: Max duration for graceful shutdown (e.g., `30`).
+- `SERVER_LOG_LEVEL`: Log level (`debug`, `info`, `warn`, `error`).
+- `SERVER_LOG_FORMAT`: Log format (`text` or `json`).
 
-Here's an example of how you might set up `configura` in your `main.go`:
+#### OpenFeature
+
+- `SERVER_OPENFEATURE_PROVIDER_NAME`: Name of the provider (e.g., `go-feature-flag`). Defaults to `NoopProvider`.
+- `SERVER_OPENFEATURE_PROVIDER_URL`: URL of the provider endpoint.
+
+#### OpenTelemetry
+
+- `OTEL_ENABLED`: Set to `true` to enable OpenTelemetry instrumentation.
+- `OTEL_SERVICE_NAME`: The name of your service (e.g., `my-cool-api`).
+- `OTEL_TRACES_ENABLED`, `OTEL_METRICS_ENABLED`, `OTEL_LOGS_ENABLED`: Set to `true` or `false` to toggle individual signals.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: Default OTLP endpoint URL (e.g., `http://opentelemetry-collector:4317`).
+- `OTEL_EXPORTER_OTLP_PROTOCOL`: Default protocol for all signals (`grpc` or `http/protobuf`).
+- `OTEL_EXPORTER_OTLP_HEADERS`: Default headers for all signals (e.g., `key=value,key2=value2`).
+- `OTEL_EXPORTER_OTLP_TIMEOUT`: Default export timeout for all signals.
+
+You can also override settings for each signal type (traces, metrics, logs) using specific variables like `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL`, etc.
+
+### 2. Example: Manual Setup
+
+Here's how to set up and run a `ponrunner` server manually.
 
 ```go
 package main
@@ -52,7 +82,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -63,84 +92,92 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// --- Simulate setting environment variables (for example purposes) ---
-	// In a real scenario, these would be set in your shell, Dockerfile, K8s manifest, etc.
-	os.Setenv(string(ponrunner.SERVER_PORT), "8080")
-	os.Setenv(string(ponrunner.SERVER_WRITE_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_READ_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_REQUEST_TIMEOUT), "5")
-	os.Setenv(string(ponrunner.SERVER_SHUTDOWN_TIMEOUT), "5")
-
-	// Initialize Configuration with configura
+	// 1. Initialize Configuration
+	// Ponrunner requires several configuration keys. Your application is responsible
+	// for registering them with 'configura'.
 	cfg := configura.NewConfigImpl()
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, 8080)                 // Fallback port 8080
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_WRITE_TIMEOUT, int64(5))    // Fallback write timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_READ_TIMEOUT, int64(5))     // Fallback read timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_REQUEST_TIMEOUT, int64(5))  // Fallback request timeout 5 seconds
-	configura.LoadEnvironment(cfg, ponrunner.SERVER_SHUTDOWN_TIMEOUT, int64(5)) // Fallback shutdown timeout 5 seconds
+	registerConfig(cfg)
 
-	r := chi.NewRouter()
-	err := ponrunner.Start(ctx, cfg, r, MyAPIBundle)
+	// 2. Create a Chi router
+	router := chi.NewRouter()
+
+	// 3. Start the server
+	// The third argument is a function that registers your application's routes.
+	err := ponrunner.Start(ctx, cfg, router, registerRoutes)
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
-type (
-	MyAPIBundleRequest  struct{}
-	MyAPIBundleResponse struct {
-		Status int `header:"-"`
-		Body   struct {
-			Message string `json:"message"`
-		}
-	}
-)
+// registerConfig registers all the necessary configuration variables that ponrunner uses.
+func registerConfig(cfg configura.Config) {
+	// In a real app, you would load these from the environment.
+	// We set fallback values here for demonstration.
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_PORT, int64(8080))
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_WRITE_TIMEOUT, int64(10))
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_READ_TIMEOUT, int64(10))
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_REQUEST_TIMEOUT, int64(15))
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_SHUTDOWN_TIMEOUT, int64(30))
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_LEVEL, "info")
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_LOG_FORMAT, "text")
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_NAME, "")
+	configura.LoadEnvironment(cfg, ponrunner.SERVER_OPENFEATURE_PROVIDER_URL, "")
+	// OTel variables are also registered but default to disabled.
+}
 
-// MyAPIBundle is an example APIBundle.
-func MyAPIBundle(cfg configura.Config, api huma.API) error {
+type HelloResponse struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
+// registerRoutes defines your API endpoints.
+// It receives the config, the Chi router, and a Huma API instance.
+func registerRoutes(cfg configura.Config, router chi.Router, api huma.API) error {
+	// Register Huma-powered routes
 	huma.Register(api, huma.Operation{
-		OperationID: "get-hello",
+		OperationID: "get-hello-huma",
 		Method:      http.MethodGet,
 		Path:        "/hello",
-		Summary:     "Says hello",
-		Description: "A simple endpoint that returns a greeting.",
-	}, func(ctx context.Context, input *MyAPIBundleRequest) (*MyAPIBundleResponse, error) {
-		return &MyAPIBundleResponse{
-			Status: http.StatusOK,
-			Body: struct {
-				Message string `json:"message"`
-			}{
-				Message: fmt.Sprintf("Hello from Ponrunner! Port: %d", cfg.Int64("SERVER_PORT")),
-			},
-		}, nil
+		Summary:     "Get a greeting from Huma",
+	}, func(ctx context.Context, input *struct{}) (*HelloResponse, error) {
+		resp := &HelloResponse{}
+		port := cfg.Int64(ponrunner.SERVER_PORT)
+		resp.Body.Message = fmt.Sprintf("Hello from Ponrunner with Huma on port %d!", port)
+		return resp, nil
 	})
+
+	// You can also register standard Chi routes
+	router.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("pong"))
+	})
+
 	return nil
 }
 ```
 
-Running the Example
+### 3. Running the Example
 
-1.  Save the `main.go` and `bundles.go` (if separate, or combine them).
-2.  Ensure you have the necessary Go modules:
+1.  Save the code above as `main.go`.
+2.  Initialize your Go module and fetch dependencies:
     ```sh
+    go mod init myapp
     go get github.com/ponrove/ponrunner
-    go get github.com/ponrove/configura
-    go get github.com/go-chi/chi/v5
-    go get github.com/danielgtaylor/huma/v2
-    go get github.com/rs/zerolog
     ```
-3.  Set environment variables (optional, defaults will be used otherwise):
-    ```sh
-    export SERVER_PORT=8888
-    export SERVER_REQUEST_TIMEOUT=20
-    ```
-4.  Run the application:
+3.  Run the application:
     ```sh
     go run main.go
     ```
+4.  Set environment variables to customize its behavior:
+    ```sh
+    export SERVER_PORT=8888
+    export SERVER_LOG_FORMAT=json
+    go run main.go
+    ```
 5.  Access the endpoints:
-    - `http://localhost:8888/hello`
-    - `http://localhost:8888/openapi.json` (Huma serves OpenAPI spec by default)
+    - `curl http://localhost:8888/hello`
+    - `curl http://localhost:8888/ping`
+    - Huma also serves an OpenAPI spec: `http://localhost:8888/openapi.json`
 
 ## Contributing
 

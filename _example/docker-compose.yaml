@@ -1,0 +1,123 @@
+services:
+  example-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - "SERVER_PORT=8080"
+      - "SERVER_WRITE_TIMEOUT=5"
+      - "SERVER_READ_TIMEOUT=5"
+      - "SERVER_REQUEST_TIMEOUT=30"
+      - "SERVER_SHUTDOWN_TIMEOUT=10"
+      - "SERVER_OPENFEATURE_PROVIDER_NAME=NoopProvider"
+      - "OTEL_ENABLED=true"
+      - "OTEL_EXPORTER_ENABLED=true"
+      - "OTEL_EXPORTER_OTLP_ENDPOINT=opentelemetry-collector-svc:4317"
+      - "OTEL_EXPORTER_OTLP_PROTOCOL=grpc"
+      - "OTEL_LOGS_ENABLED=true"
+      - "OTEL_METRICS_ENABLED=true"
+      - "OTEL_TRACES_ENABLED=true"
+      - "OTEL_SERVICE_NAME=example-service"
+      - "SERVER_LOG_LEVEL=info"
+      - "SERVER_LOG_FORMAT=json"
+    ports:
+      - 8080:8080
+    depends_on:
+      - opentelemetry-collector-svc
+
+  opentelemetry-collector-svc:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:latest
+    container_name: opentelemetry-collector-svc
+    volumes:
+      - ./configs/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command:
+      - "--config=/etc/otel-collector-config.yaml"
+    depends_on:
+      - loki-svc
+      - prometheus-svc
+    networks:
+      - default
+
+  grafana-svc:
+    image: grafana/grafana:latest
+    container_name: grafana-svc
+    ports:
+      - "3000:3000" # Grafana UI port
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+    volumes:
+      - ./configs/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/datasource.yaml
+    depends_on:
+      - postgres-grafana-svc
+      - loki-svc
+      - prometheus-svc
+      #     - jaeger-svc
+      - tempo-svc
+    networks:
+      - default
+
+  loki-svc:
+    image: grafana/loki:latest
+    command: -config.expand-env=true -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./configs/loki-config.yaml:/etc/loki/local-config.yaml
+    networks:
+      - default
+
+  prometheus-svc:
+    image: prom/prometheus:latest
+    container_name: prometheus-svc
+    volumes:
+      - ./configs/prometheus-config.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090" # Prometheus UI port
+    networks:
+      - default
+
+  jaeger-svc:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "6831:6831/udp" # UDP port for Jaeger agent
+      - "16686:16686" # Web UI
+    networks:
+      - default
+
+  postgres-grafana-svc:
+    image: postgres
+    container_name:
+      postgres-grafana-svc
+      # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_GRAFANA_DB}
+    ports:
+      - "${POSTGRES_GRAFANA_PORT}:5432"
+    networks:
+      - default
+  tempo-svc:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./configs/tempo.yaml:/etc/tempo.yaml
+    depends_on:
+      - memcached
+    networks:
+      - default
+  memcached:
+    image: memcached:1.6.38
+    container_name: memcached
+    ports:
+      - "11211:11211"
+    environment:
+      - MEMCACHED_MAX_MEMORY=64m # Set the maximum memory usage
+      - MEMCACHED_THREADS=4 # Number of threads to use
+    networks:
+      - default
+networks:
+  default:
+    driver: bridge
