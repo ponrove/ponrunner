@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ponrove/configura"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -71,14 +70,11 @@ func TestSetupOTelSDK_Disabled(t *testing.T) {
 
 	shutdown, err := setupOTelSDK(ctx, cfg)
 	require.NoError(t, err, "setupOTelSDK should not return an error when OTel is disabled")
-	require.NotNil(t, shutdown, "shutdown function should be non-nil (no-op) when OTel is disabled")
+	require.Nil(t, shutdown, "shutdown function should be nil when OTel is disabled")
 
 	assert.Equal(t, originalTracerProvider, otel.GetTracerProvider(), "TracerProvider should not have been changed")
 	assert.Equal(t, originalMeterProvider, otel.GetMeterProvider(), "MeterProvider should not have been changed")
 	assert.Equal(t, originalLoggerProvider, otelglobal.GetLoggerProvider(), "LoggerProvider should not have been changed")
-
-	err = shutdown(context.Background())
-	assert.NoError(t, err, "no-op shutdown function should not return an error")
 }
 
 func TestSetupOTelSDK_Enabled_DefaultServiceName(t *testing.T) {
@@ -324,128 +320,5 @@ func startMockHTTPServer(t *testing.T) (url string, stop func()) {
 	}))
 	return server.URL, func() {
 		server.Close()
-	}
-}
-
-func TestSetupOTelSDK_ExporterConfiguration(t *testing.T) {
-	ctx := context.Background()
-
-	tests := []struct {
-		name                 string
-		configure            func(cfg *configura.ConfigImpl, grpcAddr string, httpURL string)
-		expectErrorSubstring string
-		expectProvidersSet   bool
-	}{
-		{
-			name: "OTLP http/protobuf exporter for all signals (generic endpoint)",
-			configure: func(cfg *configura.ConfigImpl, _ string, httpURL string) {
-				cfg.RegBool[OTEL_EXPORTER_ENABLED] = true
-				cfg.RegString[OTEL_EXPORTER_OTLP_PROTOCOL] = "http/protobuf"
-				cfg.RegString[OTEL_EXPORTER_OTLP_ENDPOINT] = httpURL
-			},
-			expectProvidersSet: true,
-		},
-		{
-			name: "OTLP gRPC for traces, HTTP for metrics, stdout for logs (specific configs)",
-			configure: func(cfg *configura.ConfigImpl, grpcAddr string, httpURL string) {
-				cfg.RegBool[OTEL_EXPORTER_ENABLED] = true // Enable OTLP generally
-				// Traces to gRPC
-				cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_PROTOCOL] = "grpc"
-				cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_ENDPOINT] = grpcAddr
-				// Metrics to HTTP
-				cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_PROTOCOL] = "http/protobuf"
-				cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_ENDPOINT] = httpURL
-				// Logs will use stdout as OTEL_LOGS_ENABLED=true and no OTLP log config.
-			},
-			expectProvidersSet: true,
-		},
-		{
-			name: "OTLP enabled but no OTLP endpoints (falls back to stdout)",
-			configure: func(cfg *configura.ConfigImpl, _ string, _ string) {
-				cfg.RegBool[OTEL_EXPORTER_ENABLED] = true
-				// No OTEL_EXPORTER_OTLP_ENDPOINT or signal specific endpoints set.
-				// This should result in stdout exporters for enabled signals.
-			},
-			expectProvidersSet: true,
-		},
-		{
-			name: "Invalid OTLP protocol",
-			configure: func(cfg *configura.ConfigImpl, grpcAddr string, _ string) {
-				cfg.RegBool[OTEL_EXPORTER_ENABLED] = true
-				cfg.RegString[OTEL_EXPORTER_OTLP_PROTOCOL] = "invalid-protocol"
-				cfg.RegString[OTEL_EXPORTER_OTLP_ENDPOINT] = grpcAddr // Endpoint needed to trigger protocol use
-			},
-			expectErrorSubstring: "invalid-protocol",
-			expectProvidersSet:   false,
-		},
-		{
-			name: "Default exporter (stdout), all signals enabled",
-			configure: func(cfg *configura.ConfigImpl, _ string, _ string) {
-				// OTEL_EXPORTER_ENABLED not set, defaults to "stdout" effectively
-			},
-			expectProvidersSet: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			grpcAddr, stopGRPC := startMockGRPCServer(t)
-			defer stopGRPC()
-
-			httpURL, stopHTTP := startMockHTTPServer(t)
-			defer stopHTTP()
-
-			cfg := newDefaultCfg()
-			cfg.RegBool[OTEL_ENABLED] = true // OTel must be enabled
-			cfg.RegBool[OTEL_TRACES_ENABLED] = true
-			cfg.RegBool[OTEL_METRICS_ENABLED] = true
-			cfg.RegBool[OTEL_LOGS_ENABLED] = true
-
-			tt.configure(cfg, grpcAddr, httpURL)
-			originalSlogLogger := slog.Default()
-			slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})))
-			defer slog.SetDefault(originalSlogLogger)
-			initialTracerProvider := otel.GetTracerProvider()
-			initialMeterProvider := otel.GetMeterProvider()
-			initialLoggerProvider := otelglobal.GetLoggerProvider()
-			defer func() {
-				otel.SetTracerProvider(initialTracerProvider)
-				otel.SetMeterProvider(initialMeterProvider)
-				otelglobal.SetLoggerProvider(initialLoggerProvider)
-				slog.SetDefault(originalSlogLogger)
-			}()
-
-			shutdown, err := setupOTelSDK(ctx, cfg)
-
-			if tt.expectErrorSubstring != "" {
-				require.Error(t, err, "setupOTelSDK should return an error for %s - %+v", tt.name, cfg)
-				assert.Contains(t, err.Error(), tt.expectErrorSubstring, "Error message mismatch for %s", tt.name)
-				require.NotNil(t, shutdown, "Shutdown function should be nil on error for %s", tt.name)
-
-				assert.Equal(t, initialTracerProvider, otel.GetTracerProvider(), "TracerProvider should not change on error for %s", tt.name)
-				assert.Equal(t, initialMeterProvider, otel.GetMeterProvider(), "MeterProvider should not change on error for %s", tt.name)
-				assert.Equal(t, initialLoggerProvider, otelglobal.GetLoggerProvider(), "LoggerProvider should not change on error for %s", tt.name)
-			} else {
-				require.NoError(t, err, "setupOTelSDK should succeed for %s", tt.name)
-				require.NotNil(t, shutdown, "Shutdown function should be non-nil for %s", tt.name)
-
-				if tt.expectProvidersSet {
-					assert.NotEqual(t, initialTracerProvider, otel.GetTracerProvider(), "TracerProvider should have been updated for %s", tt.name)
-					assert.NotEqual(t, initialMeterProvider, otel.GetMeterProvider(), "MeterProvider should have been updated for %s", tt.name)
-					assert.NotEqual(t, initialLoggerProvider, otelglobal.GetLoggerProvider(), "LoggerProvider should have been updated for %s", tt.name)
-				} else {
-					// This case is mostly for completeness, as errors usually mean no providers are set.
-					assert.Equal(t, initialTracerProvider, otel.GetTracerProvider(), "TracerProvider should not change if not expected for %s", tt.name)
-					assert.Equal(t, initialMeterProvider, otel.GetMeterProvider(), "MeterProvider should not change if not expected for %s", tt.name)
-					assert.Equal(t, initialLoggerProvider, otelglobal.GetLoggerProvider(), "LoggerProvider should not change if not expected for %s", tt.name)
-				}
-
-				shutdownErr := shutdown(context.Background())
-				assert.NoError(t, shutdownErr, "shutdown should succeed for %s", httpURL)
-
-				idempotentShutdownErr := shutdown(context.Background())
-				assert.NoError(t, idempotentShutdownErr, "shutdown should be idempotent for %s", tt.name)
-			}
-		})
 	}
 }

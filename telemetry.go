@@ -1,9 +1,9 @@
 package ponrunner
 
 import (
-	"fmt"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -35,7 +35,6 @@ const (
 	OTEL_METRICS_ENABLED                configura.Variable[bool]   = "OTEL_METRICS_ENABLED"
 	OTEL_TRACES_ENABLED                 configura.Variable[bool]   = "OTEL_TRACES_ENABLED"
 	OTEL_SERVICE_NAME                   configura.Variable[string] = "OTEL_SERVICE_NAME"
-	OTEL_EXPORTER_ENABLED               configura.Variable[bool]   = "OTEL_EXPORTER_ENABLED"
 	OTEL_EXPORTER_OTLP_ENDPOINT         configura.Variable[string] = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  configura.Variable[string] = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 	OTEL_EXPORTER_OTLP_METRICS_ENDPOINT configura.Variable[string] = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
@@ -156,7 +155,6 @@ func setupOTelSDK(ctx context.Context, cfg configura.Config) (shutdownFunc, erro
 		OTEL_METRICS_ENABLED,
 		OTEL_TRACES_ENABLED,
 		OTEL_SERVICE_NAME,
-		OTEL_EXPORTER_ENABLED,
 		OTEL_EXPORTER_OTLP_ENDPOINT,
 		OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
 		OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
@@ -181,10 +179,7 @@ func setupOTelSDK(ctx context.Context, cfg configura.Config) (shutdownFunc, erro
 
 	if !cfg.Bool(OTEL_ENABLED) {
 		slog.InfoContext(ctx, "OpenTelemetry is disabled via OTEL_ENABLED. Skipping SDK setup.")
-		return func(shutdownCtx context.Context) error {
-			slog.DebugContext(shutdownCtx, "OpenTelemetry was disabled; no-op shutdown called.")
-			return nil
-		}, nil
+		return nil, nil
 	}
 
 	slog.InfoContext(ctx, "OpenTelemetry is enabled. Proceeding with SDK setup.")
@@ -289,7 +284,7 @@ func newTracerProvider(ctx context.Context, res *resource.Resource, cfg configur
 	var spanExporter trace.SpanExporter
 	var err error
 
-	if cfg.Bool(OTEL_EXPORTER_ENABLED) {
+	if cfg.Bool(OTEL_TRACES_ENABLED) {
 		slog.DebugContext(ctx, "OTLP exporter configured for traces. Attempting to create OTLP trace exporter.")
 		protocol := strings.ToLower(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL), cfg.String(OTEL_EXPORTER_OTLP_PROTOCOL)))
 		endpoint := configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_TRACES_ENDPOINT), cfg.String(OTEL_EXPORTER_OTLP_ENDPOINT))
@@ -367,7 +362,7 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg configura
 	var metricExporter metric.Exporter
 	var err error
 
-	if configura.Fallback(cfg.Bool(OTEL_EXPORTER_ENABLED), false) {
+	if configura.Fallback(cfg.Bool(OTEL_METRICS_ENABLED), false) {
 		slog.DebugContext(ctx, "OTLP exporter configured for metrics. Attempting to create OTLP metric exporter.")
 		protocol := strings.ToLower(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL), cfg.String(OTEL_EXPORTER_OTLP_PROTOCOL)))
 		endpoint := configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_METRICS_ENDPOINT), cfg.String(OTEL_EXPORTER_OTLP_ENDPOINT))
@@ -446,7 +441,7 @@ func newLoggerProvider(ctx context.Context, res *resource.Resource, cfg configur
 	var logExporter sdklog.Exporter
 	var err error
 
-	if configura.Fallback(cfg.Bool(OTEL_EXPORTER_ENABLED), false) {
+	if configura.Fallback(cfg.Bool(OTEL_LOGS_ENABLED), false) {
 		slog.DebugContext(ctx, "OTLP exporter configured for logs. Attempting to create OTLP log exporter.")
 		protocol := strings.ToLower(configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL), cfg.String(OTEL_EXPORTER_OTLP_PROTOCOL)))
 		endpoint := configura.Fallback(cfg.String(OTEL_EXPORTER_OTLP_LOGS_ENDPOINT), cfg.String(OTEL_EXPORTER_OTLP_ENDPOINT))
