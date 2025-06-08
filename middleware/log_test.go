@@ -23,18 +23,6 @@ import (
 
 func defaultLogRequestConfig() configura.Config {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString = map[configura.Variable[string]]string{
-		REQUEST_LOG_FIELD_DURATION:       "duration",
-		REQUEST_LOG_FIELD_REQUEST_METHOD: "requestMethod",
-		REQUEST_LOG_FIELD_REQUEST_URL:    "requestURL",
-		REQUEST_LOG_FIELD_USER_AGENT:     "userAgent",
-		REQUEST_LOG_FIELD_REQUEST_SIZE:   "requestSize",
-		REQUEST_LOG_FIELD_REMOTE_IP:      "remoteIP",
-		REQUEST_LOG_FIELD_REFERER:        "referer",
-		REQUEST_LOG_FIELD_PROTOCOL:       "protocol",
-		REQUEST_LOG_FIELD_REQUEST_ID:     "requestID",
-		REQUEST_LOG_FIELD_REAL_IP:        "realIP", // Ensure this is part of the default config
-	}
 	return cfg
 }
 
@@ -42,21 +30,21 @@ func defaultLogRequestConfig() configura.Config {
 // JSON tags must match the keys used in LogRequest, which are derived from
 // defaultLogRequestConfig or hardcoded (like "statusCode", "responseSize").
 type logOutput struct {
-	Time          string `json:"time"`           // Standard slog field
-	Level         string `json:"level"`          // Standard slog field
-	Msg           string `json:"msg"`            // Standard slog field
-	Duration      int64  `json:"duration"`       // Configured key (nanoseconds)
-	RequestMethod string `json:"requestMethod"`  // Configured key
-	RequestURL    string `json:"requestURL"`     // Configured key
-	StatusCode    int    `json:"statusCode"`     // Hardcoded key in LogRequest
-	ResponseSize  int    `json:"responseSize"`   // Hardcoded key in LogRequest
-	UserAgent     string `json:"userAgent"`      // Configured key
-	RequestSize   string `json:"requestSize"`    // Configured key
-	RemoteIP      string `json:"remoteIP"`       // Configured key
-	Referer       string `json:"referer"`        // Configured key
-	Protocol      string `json:"protocol"`       // Configured key
-	RequestID     string `json:"requestID"`      // Configured key
-	RealIP        string `json:"realIP"`         // Configured key
+	Time          string `json:"time"`          // Standard slog field
+	Level         string `json:"level"`         // Standard slog field
+	Msg           string `json:"msg"`           // Standard slog field
+	Duration      int64  `json:"duration"`      // Configured key (nanoseconds)
+	RequestMethod string `json:"method"`        // Configured key
+	RequestURL    string `json:"request_url"`   // Configured key
+	StatusCode    int    `json:"status_code"`   // Hardcoded key in LogRequest
+	ResponseSize  int    `json:"response_size"` // Hardcoded key in LogRequest
+	UserAgent     string `json:"user_agent"`    // Configured key
+	RequestSize   string `json:"request_size"`  // Configured key
+	RemoteIP      string `json:"remote_ip"`     // Configured key
+	Referer       string `json:"referer"`       // Configured key
+	Protocol      string `json:"protocol"`      // Configured key
+	RequestID     string `json:"request_id"`    // Configured key
+	RealIP        string `json:"real_ip"`       // Configured key
 }
 
 // Helper to get path from a full URL string for matching log messages

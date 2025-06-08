@@ -51,6 +51,8 @@ const (
 	REQUEST_LOG_FIELD_REAL_IP        configura.Variable[string] = "REQUEST_LOG_FIELD_REAL_IP"
 	REQUEST_LOG_FIELD_STATUS_CODE    configura.Variable[string] = "REQUEST_LOG_FIELD_STATUS_CODE"
 	REQUEST_LOG_FIELD_RESPONSE_SIZE  configura.Variable[string] = "REQUEST_LOG_FIELD_RESPONSE_SIZE"
+	REQUEST_LOG_FIELD_HOST           configura.Variable[string] = "REQUEST_LOG_FIELD_HOST"
+	REQUEST_LOG_FIELD_FINGERPRINT    configura.Variable[string] = "REQUEST_LOG_FIELD_FINGERPRINT"
 )
 
 // LogRequest is a middleware that logs the request details on each request.
@@ -74,16 +76,18 @@ func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 				fmt.Sprintf("HTTP request processed: %s %s", r.Method, r.URL.Path),
 				slog.Duration(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()),
-				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_STATUS_CODE), "statusCode"), crw.statusCode),
-				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_RESPONSE_SIZE), "responseSize"), crw.size),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "request_url"), r.URL.String()),
+				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_STATUS_CODE), "status_code"), crw.statusCode),
+				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_RESPONSE_SIZE), "response_size"), crw.size),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_HOST), "host"), r.Header.Get("Host")),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_FINGERPRINT), "fingerprint"), r.Header.Get("X-Fingerprint")),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "user_agent"), r.Header.Get("User-Agent")),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "request_size"), strconv.FormatInt(r.ContentLength, 10)),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remote_ip"), r.RemoteAddr),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REFERER), "referer"), r.Header.Get("Referer")),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_PROTOCOL), "protocol"), r.Proto),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "realIP"), GetIPAddressFromContext(r.Context())),
-				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "requestID"), middleware.GetReqID(r.Context())),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REAL_IP), "real_ip"), GetIPAddressFromContext(r.Context())),
+				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_ID), "request_id"), middleware.GetReqID(r.Context())),
 			)
 		})
 	}
