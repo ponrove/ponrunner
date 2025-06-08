@@ -49,6 +49,8 @@ const (
 	REQUEST_LOG_FIELD_PROTOCOL       configura.Variable[string] = "REQUEST_LOG_FIELD_PROTOCOL"
 	REQUEST_LOG_FIELD_REQUEST_ID     configura.Variable[string] = "REQUEST_LOG_FIELD_REQUEST_ID"
 	REQUEST_LOG_FIELD_REAL_IP        configura.Variable[string] = "REQUEST_LOG_FIELD_REAL_IP"
+	REQUEST_LOG_FIELD_STATUS_CODE    configura.Variable[string] = "REQUEST_LOG_FIELD_STATUS_CODE"
+	REQUEST_LOG_FIELD_RESPONSE_SIZE  configura.Variable[string] = "REQUEST_LOG_FIELD_RESPONSE_SIZE"
 )
 
 // LogRequest is a middleware that logs the request details on each request.
@@ -73,8 +75,8 @@ func LogRequest(cfg configura.Config) func(http.Handler) http.Handler {
 				slog.Duration(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_DURATION), "duration"), time.Since(start)),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_METHOD), "method"), r.Method),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_URL), "requestURL"), r.URL.String()),
-				slog.Int("statusCode", crw.statusCode), // Added status code directly
-				slog.Int("responseSize", crw.size),     // Added response size directly
+				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_STATUS_CODE), "statusCode"), crw.statusCode),
+				slog.Int(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_RESPONSE_SIZE), "responseSize"), crw.size),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_USER_AGENT), "userAgent"), r.Header.Get("User-Agent")),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REQUEST_SIZE), "requestSize"), strconv.FormatInt(r.ContentLength, 10)),
 				slog.String(configura.Fallback(cfg.String(REQUEST_LOG_FIELD_REMOTE_IP), "remoteIP"), r.RemoteAddr),
