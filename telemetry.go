@@ -1,6 +1,7 @@
 package ponrunner
 
 import (
+	"fmt"
 	"context"
 	"errors"
 	"log/slog"
@@ -335,11 +336,10 @@ func newTracerProvider(ctx context.Context, res *resource.Resource, cfg configur
 			}
 
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to create OTLP trace exporter, falling back to stdout.", slog.Any("error", err), slog.String("protocol", protocol))
-				spanExporter = nil // Ensure it's nil so stdout is used
-			} else {
-				slog.InfoContext(ctx, "OTLP trace exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				slog.ErrorContext(ctx, "Failed to create OTLP trace exporter.", slog.Any("error", err), slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				return nil, fmt.Errorf("failed to create OTLP trace exporter (protocol: %s, endpoint: %s): %w", protocol, endpoint, err)
 			}
+			slog.InfoContext(ctx, "OTLP trace exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
 		}
 	}
 
@@ -347,8 +347,8 @@ func newTracerProvider(ctx context.Context, res *resource.Resource, cfg configur
 		slog.DebugContext(ctx, "Creating stdout trace exporter as fallback or default.")
 		spanExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to create stdout trace exporter", slog.Any("error", err))
-			return nil, err
+			slog.ErrorContext(ctx, "Failed to create stdout trace exporter.", slog.Any("error", err))
+			return nil, fmt.Errorf("failed to create stdout trace exporter: %w", err)
 		}
 		slog.InfoContext(ctx, "Stdout trace exporter created.")
 	}
@@ -358,7 +358,7 @@ func newTracerProvider(ctx context.Context, res *resource.Resource, cfg configur
 		trace.WithResource(res),
 	)
 	slog.InfoContext(ctx, "Tracer provider created.")
-	return tp, err
+	return tp, nil
 }
 
 // newMeterProvider creates a new metric.MeterProvider.
@@ -410,15 +410,14 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg configura
 				}
 				metricExporter, err = otlpmetricgrpc.New(ctx, opts...)
 			default:
-				err = errors.New("unsupported OTLP protocol for metrics: " + protocol)
+				return nil, errors.New("unsupported OTLP protocol for metrics: " + protocol)
 			}
 
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to create OTLP metric exporter, falling back to stdout.", slog.Any("error", err), slog.String("protocol", protocol))
-				metricExporter = nil // Ensure fallback
-			} else {
-				slog.InfoContext(ctx, "OTLP metric exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				slog.ErrorContext(ctx, "Failed to create OTLP metric exporter.", slog.Any("error", err), slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				return nil, fmt.Errorf("failed to create OTLP metric exporter (protocol: %s, endpoint: %s): %w", protocol, endpoint, err)
 			}
+			slog.InfoContext(ctx, "OTLP metric exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
 		}
 	}
 
@@ -426,8 +425,8 @@ func newMeterProvider(ctx context.Context, res *resource.Resource, cfg configura
 		slog.DebugContext(ctx, "Creating stdout metric exporter as fallback or default.")
 		metricExporter, err = stdoutmetric.New()
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to create stdout metric exporter", slog.Any("error", err))
-			return nil, err
+			slog.ErrorContext(ctx, "Failed to create stdout metric exporter.", slog.Any("error", err))
+			return nil, fmt.Errorf("failed to create stdout metric exporter: %w", err)
 		}
 		slog.InfoContext(ctx, "Stdout metric exporter created.")
 	}
@@ -490,15 +489,14 @@ func newLoggerProvider(ctx context.Context, res *resource.Resource, cfg configur
 				}
 				logExporter, err = otlploggrpc.New(ctx, opts...)
 			default:
-				err = errors.New("unsupported OTLP protocol for logs: " + protocol)
+				return nil, errors.New("unsupported OTLP protocol for logs: " + protocol)
 			}
 
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to create OTLP log exporter, falling back to stdout.", slog.Any("error", err), slog.String("protocol", protocol))
-				logExporter = nil // Ensure fallback
-			} else {
-				slog.InfoContext(ctx, "OTLP log exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				slog.ErrorContext(ctx, "Failed to create OTLP log exporter.", slog.Any("error", err), slog.String("protocol", protocol), slog.String("endpoint", endpoint))
+				return nil, fmt.Errorf("failed to create OTLP log exporter (protocol: %s, endpoint: %s): %w", protocol, endpoint, err)
 			}
+			slog.InfoContext(ctx, "OTLP log exporter created successfully.", slog.String("protocol", protocol), slog.String("endpoint", endpoint))
 		}
 	}
 
@@ -506,8 +504,8 @@ func newLoggerProvider(ctx context.Context, res *resource.Resource, cfg configur
 		slog.DebugContext(ctx, "Creating OTel stdout log exporter as fallback or default.")
 		logExporter, err = stdoutlog.New() // This exporter is for OTel logs.
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to create OTel stdout log exporter", slog.Any("error", err))
-			return nil, err
+			slog.ErrorContext(ctx, "Failed to create OTel stdout log exporter.", slog.Any("error", err))
+			return nil, fmt.Errorf("failed to create OTel stdout log exporter: %w", err)
 		}
 		slog.InfoContext(ctx, "OTel stdout log exporter created.")
 	}
