@@ -20,36 +20,48 @@ import (
 
 func newDefaultCfg() *configura.ConfigImpl {
 	cfg := configura.NewConfigImpl()
-	cfg.RegInt64[SERVER_PORT] = 8080
-	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 30
-	cfg.RegInt64[SERVER_SHUTDOWN_TIMEOUT] = 30
-	cfg.RegInt64[SERVER_READ_TIMEOUT] = 30
-	cfg.RegInt64[SERVER_WRITE_TIMEOUT] = 30
-	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_NAME] = "go-feature-flag"
-	cfg.RegString[SERVER_OPENFEATURE_PROVIDER_URL] = "http://localhost:8080"
-	cfg.RegBool[OTEL_ENABLED] = false
-	cfg.RegBool[OTEL_LOGS_ENABLED] = true
-	cfg.RegBool[OTEL_METRICS_ENABLED] = true
-	cfg.RegBool[OTEL_TRACES_ENABLED] = true
-	cfg.RegString[OTEL_EXPORTER_OTLP_ENDPOINT] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_PROTOCOL] = ""
-	cfg.RegInt64[OTEL_EXPORTER_OTLP_TIMEOUT] = 5
-	cfg.RegString[OTEL_EXPORTER_OTLP_HEADERS] = "x-ponrove-tenant-id=default"
-	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_ENDPOINT] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_ENDPOINT] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_ENDPOINT] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_PROTOCOL] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_PROTOCOL] = ""
-	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_PROTOCOL] = ""
-	cfg.RegInt64[OTEL_EXPORTER_OTLP_TRACES_TIMEOUT] = 5
-	cfg.RegInt64[OTEL_EXPORTER_OTLP_METRICS_TIMEOUT] = 5
-	cfg.RegInt64[OTEL_EXPORTER_OTLP_LOGS_TIMEOUT] = 5
-	cfg.RegString[OTEL_EXPORTER_OTLP_TRACES_HEADERS] = "x-ponrove-tenant-id=default"
-	cfg.RegString[OTEL_EXPORTER_OTLP_METRICS_HEADERS] = "x-ponrove-tenant-id=default"
-	cfg.RegString[OTEL_EXPORTER_OTLP_LOGS_HEADERS] = "x-ponrove-tenant-id=default"
-	cfg.RegString[OTEL_SERVICE_NAME] = "ponrunner-test"
-	cfg.RegString[SERVER_LOG_LEVEL] = "debug"
-	cfg.RegString[SERVER_LOG_FORMAT] = "json"
+	err := configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{
+		SERVER_OPENFEATURE_PROVIDER_NAME:    "go-feature-flag",
+		SERVER_OPENFEATURE_PROVIDER_URL:     "http://localhost:8080",
+		SERVER_LOG_LEVEL:                    "debug",
+		SERVER_LOG_FORMAT:                   "json",
+		OTEL_SERVICE_NAME:                   "ponrunner-test",
+		OTEL_EXPORTER_OTLP_ENDPOINT:         "",
+		OTEL_EXPORTER_OTLP_PROTOCOL:         "",
+		OTEL_EXPORTER_OTLP_HEADERS:          "x-ponrove-tenant-id=default",
+		OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:  "",
+		OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "",
+		OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:    "",
+		OTEL_EXPORTER_OTLP_TRACES_PROTOCOL:  "",
+		OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: "",
+		OTEL_EXPORTER_OTLP_LOGS_PROTOCOL:    "",
+		OTEL_EXPORTER_OTLP_TRACES_HEADERS:   "x-ponrove-tenant-id=default",
+		OTEL_EXPORTER_OTLP_METRICS_HEADERS:  "x-ponrove-tenant-id=default",
+		OTEL_EXPORTER_OTLP_LOGS_HEADERS:     "x-ponrove-tenant-id=default",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to write default configuration: %v", err))
+	}
+	err = configura.WriteConfiguration(cfg, map[configura.Variable[int64]]int64{
+		SERVER_PORT:                        8080,
+		SERVER_REQUEST_TIMEOUT:             30,
+		SERVER_SHUTDOWN_TIMEOUT:            30,
+		SERVER_READ_TIMEOUT:                30,
+		SERVER_WRITE_TIMEOUT:               30,
+		OTEL_EXPORTER_OTLP_TIMEOUT:         5,
+		OTEL_EXPORTER_OTLP_TRACES_TIMEOUT:  5,
+		OTEL_EXPORTER_OTLP_METRICS_TIMEOUT: 5,
+		OTEL_EXPORTER_OTLP_LOGS_TIMEOUT:    5,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to write default configuration: %v", err))
+	}
+	err = configura.WriteConfiguration(cfg, map[configura.Variable[bool]]bool{
+		OTEL_ENABLED:         false,
+		OTEL_LOGS_ENABLED:    true,
+		OTEL_METRICS_ENABLED: true,
+		OTEL_TRACES_ENABLED:  true,
+	})
 	return cfg
 }
 
@@ -206,10 +218,14 @@ func getFreePort() (int, error) {
 func TestStart_SuccessfulShutdown(t *testing.T) {
 	t.Parallel()
 
-	cfg := newDefaultCfg()
+	emptyCfg := configura.NewConfigImpl()
 	freePort, err := getFreePort()
 	require.NoError(t, err, "Failed to get free port")
-	cfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
+	err = configura.WriteConfiguration(emptyCfg, map[configura.Variable[int64]]int64{
+		SERVER_PORT: int64(freePort),
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	startErrChan := make(chan error, 1)
@@ -217,7 +233,7 @@ func TestStart_SuccessfulShutdown(t *testing.T) {
 	r := chi.NewRouter()
 	go func() {
 		// We expect Start to return nil on successful graceful shutdown.
-		startErrChan <- Start(ctx, cfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+		startErrChan <- Start(ctx, finalCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
 			return nil
 		})
 	}()
@@ -261,14 +277,18 @@ func TestStart_ListenAndServeFails(t *testing.T) {
 
 	t.Logf("Attempting to start server on busy port: %v", busyPort)
 
-	cfg := newDefaultCfg()
-	cfg.RegInt64[SERVER_PORT] = int64(busyPort)
+	emptyCfg := configura.NewConfigImpl()
+	err = configura.WriteConfiguration(emptyCfg, map[configura.Variable[int64]]int64{
+		SERVER_PORT: int64(busyPort),
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second) // Test timeout
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, cfg, r, func(c configura.Config, r chi.Router, a huma.API) error { return nil })
+	runErr := Start(ctx, finalCfg, r, func(c configura.Config, r chi.Router, a huma.API) error { return nil })
 
 	assert.Error(t, runErr, "Start should return an error if ListenAndServe fails")
 	// Check if the error is a bind error (OS-dependent message)
@@ -292,17 +312,21 @@ func TestStart_APIBundleRegistrationFails(t *testing.T) {
 		return cfg.ConfigurationKeysRegistered(unset_fake_configuration_flag)
 	}
 
-	cfg := newDefaultCfg()
 	freePort, err := getFreePort()
 	require.NoError(t, err, "Failed to get free port")
 
-	cfg.RegInt64[SERVER_PORT] = int64(freePort) // Use a free port
+	emptyCfg := configura.NewConfigImpl()
+	err = configura.WriteConfiguration(emptyCfg, map[configura.Variable[int64]]int64{
+		SERVER_PORT: int64(freePort),
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // Test timeout
 	defer cancel()
 
 	r := chi.NewRouter()
-	runErr := Start(ctx, cfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
+	runErr := Start(ctx, finalCfg, r, func(cfg configura.Config, r chi.Router, a huma.API) error {
 		return RegisterAPIBundles(cfg, a, testBundle)
 	})
 
@@ -313,11 +337,16 @@ func TestStart_APIBundleRegistrationFails(t *testing.T) {
 func TestStart_RequestTimeout(t *testing.T) {
 	t.Parallel()
 
-	cfg := newDefaultCfg()
 	freePort, err := getFreePort()
 	require.NoError(t, err, "Failed to get free port")
-	cfg.RegInt64[SERVER_PORT] = int64(freePort)
-	cfg.RegInt64[SERVER_REQUEST_TIMEOUT] = 1 // 1 second timeout
+
+	emptyCfg := configura.NewConfigImpl()
+	err = configura.WriteConfiguration(emptyCfg, map[configura.Variable[int64]]int64{
+		SERVER_PORT:            int64(freePort),
+		SERVER_REQUEST_TIMEOUT: 1, // Set a short request timeout for testing
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -326,7 +355,7 @@ func TestStart_RequestTimeout(t *testing.T) {
 
 	go func() {
 		// We don't expect an error here for this test.
-		_ = Start(ctx, cfg, r, func(c configura.Config, router chi.Router, a huma.API) error {
+		_ = Start(ctx, finalCfg, r, func(c configura.Config, router chi.Router, a huma.API) error {
 			// Register a route that takes longer to process than the timeout.
 			router.Get("/timeout", func(w http.ResponseWriter, r *http.Request) {
 				select {
