@@ -6,78 +6,67 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/ponrove/configura"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestSetOpenFeatureProviderTestCase struct {
 	name     string
 	expected string
 	err      error
-	cfg      configura.Config
+	cfg      map[configura.Variable[string]]string
 }
 
 var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 	{
 		name:     "Default NoopProvider",
 		expected: "NoopProvider",
-		cfg:      configura.ConfigImpl{},
+		cfg:      map[configura.Variable[string]]string{},
 		err:      nil,
 	},
 	{
 		name:     "NoopProvider without URL",
 		expected: "NoopProvider",
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_NAME: "NoopProvider",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_NAME: "NoopProvider",
 		},
 	},
 	{
 		name:     "Go Feature Flag Provider",
 		expected: "GO Feature Flag Provider",
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
-				SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
+			SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
 		},
 		err: nil,
 	},
 	{
 		name: "Provider name given, missing url",
 		err:  ErrOpenFeatureProviderURLNotSet,
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
 		},
 	},
 	{
 		name:     "Provider URL given, missing name",
 		expected: "NoopProvider",
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_URL: "http://custom-provider.example.com",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_URL: "http://custom-provider.example.com",
 		},
 	},
 	{
 		name: "Provider URL invalid",
 		err:  ErrInvalidOpenFeatureProviderURL,
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
-				SERVER_OPENFEATURE_PROVIDER_URL:  "http:/i\nvalid-url",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_NAME: "go-feature-flag",
+			SERVER_OPENFEATURE_PROVIDER_URL:  "http:/i\nvalid-url",
 		},
 	},
 	{
 		name: "Unsupported OpenFeature Provider",
 		err:  ErrUnsupportedOpenFeatureProvider,
-		cfg: &configura.ConfigImpl{
-			RegString: map[configura.Variable[string]]string{
-				SERVER_OPENFEATURE_PROVIDER_NAME: "unknown-provider-name",
-				SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
-			},
+		cfg: map[configura.Variable[string]]string{
+			SERVER_OPENFEATURE_PROVIDER_NAME: "unknown-provider-name",
+			SERVER_OPENFEATURE_PROVIDER_URL:  "http://custom-provider.example.com",
 		},
 	},
 }
@@ -87,7 +76,12 @@ var TestSetOpenFeatureProviderTestCases = []TestSetOpenFeatureProviderTestCase{
 func TestSetOpenFeatureProvider(t *testing.T) {
 	for _, tc := range TestSetOpenFeatureProviderTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := setOpenFeatureProvider(tc.cfg)
+			emptyCfg := configura.NewConfigImpl()
+			err := configura.WriteConfiguration(emptyCfg, tc.cfg)
+			require.NoError(t, err, "Failed to write free port to configuration")
+
+			t.Logf("Running test case: %s ", tc.name)
+			err = setOpenFeatureProvider(emptyCfg)
 			if tc.err != nil {
 				assert.ErrorIs(t, err, tc.err)
 				return

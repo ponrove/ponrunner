@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ponrove/configura"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -57,8 +58,12 @@ func TestMain(m *testing.M) {
 
 func TestSetupOTelSDK_Disabled(t *testing.T) {
 	ctx := context.Background()
-	cfg := newDefaultCfg()
-	cfg.RegBool[OTEL_ENABLED] = false
+	emptyCfg := configura.NewConfigImpl()
+	err := configura.WriteConfiguration(emptyCfg, map[configura.Variable[bool]]bool{
+		OTEL_ENABLED: false,
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	originalSlogLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -68,7 +73,7 @@ func TestSetupOTelSDK_Disabled(t *testing.T) {
 	originalMeterProvider := otel.GetMeterProvider()
 	originalLoggerProvider := otelglobal.GetLoggerProvider()
 
-	shutdown, err := setupOTelSDK(ctx, cfg)
+	shutdown, err := setupOTelSDK(ctx, finalCfg)
 	require.NoError(t, err, "setupOTelSDK should not return an error when OTel is disabled")
 	require.Nil(t, shutdown, "shutdown function should be nil when OTel is disabled")
 
@@ -79,12 +84,15 @@ func TestSetupOTelSDK_Disabled(t *testing.T) {
 
 func TestSetupOTelSDK_Enabled_DefaultServiceName(t *testing.T) {
 	ctx := context.Background()
-	cfg := newDefaultCfg()
-	cfg.RegBool[OTEL_ENABLED] = true
-	cfg.RegBool[OTEL_TRACES_ENABLED] = true
-	cfg.RegBool[OTEL_METRICS_ENABLED] = true
-	cfg.RegBool[OTEL_LOGS_ENABLED] = true
-	// Default exporter is stdout
+	emptyCfg := configura.NewConfigImpl()
+	err := configura.WriteConfiguration(emptyCfg, map[configura.Variable[bool]]bool{
+		OTEL_ENABLED:         true,
+		OTEL_TRACES_ENABLED:  true,
+		OTEL_METRICS_ENABLED: true,
+		OTEL_LOGS_ENABLED:    true,
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	originalSlogLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})))
@@ -100,7 +108,7 @@ func TestSetupOTelSDK_Enabled_DefaultServiceName(t *testing.T) {
 		slog.SetDefault(originalSlogLogger) // Ensure slog is restored
 	}()
 
-	shutdown, err := setupOTelSDK(ctx, cfg)
+	shutdown, err := setupOTelSDK(ctx, finalCfg)
 	require.NoError(t, err, "setupOTelSDK should succeed when OTel is enabled")
 	require.NotNil(t, shutdown, "shutdown function should be non-nil")
 
@@ -117,13 +125,20 @@ func TestSetupOTelSDK_Enabled_DefaultServiceName(t *testing.T) {
 
 func TestSetupOTelSDK_Enabled_CustomServiceName(t *testing.T) {
 	ctx := context.Background()
-	cfg := newDefaultCfg()
-	cfg.RegBool[OTEL_ENABLED] = true
-	cfg.RegBool[OTEL_TRACES_ENABLED] = true
-	cfg.RegBool[OTEL_METRICS_ENABLED] = true
-	cfg.RegBool[OTEL_LOGS_ENABLED] = true
 	customServiceName := "my-test-service"
-	cfg.RegString[OTEL_SERVICE_NAME] = customServiceName
+
+	emptyCfg := configura.NewConfigImpl()
+	err := configura.WriteConfiguration(emptyCfg, map[configura.Variable[bool]]bool{
+		OTEL_ENABLED:         true,
+		OTEL_TRACES_ENABLED:  true,
+		OTEL_METRICS_ENABLED: true,
+		OTEL_LOGS_ENABLED:    true,
+	})
+	require.NoError(t, err, "Failed to write free port to configuration")
+	err = configura.WriteConfiguration(emptyCfg, map[configura.Variable[string]]string{
+		OTEL_SERVICE_NAME: customServiceName,
+	})
+	finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 	originalSlogLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -139,7 +154,7 @@ func TestSetupOTelSDK_Enabled_CustomServiceName(t *testing.T) {
 		slog.SetDefault(originalSlogLogger)
 	}()
 
-	shutdown, err := setupOTelSDK(ctx, cfg)
+	shutdown, err := setupOTelSDK(ctx, finalCfg)
 	require.NoError(t, err, "setupOTelSDK should succeed with custom service name")
 	require.NotNil(t, shutdown)
 
@@ -236,11 +251,15 @@ func TestSetupOTelSDK_FeaturesDisabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			cfg := newDefaultCfg()
-			cfg.RegBool[OTEL_ENABLED] = true
-			cfg.RegBool[OTEL_TRACES_ENABLED] = tt.tracesEnabled
-			cfg.RegBool[OTEL_METRICS_ENABLED] = tt.metricsEnabled
-			cfg.RegBool[OTEL_LOGS_ENABLED] = tt.logsEnabled
+			emptyCfg := configura.NewConfigImpl()
+			err := configura.WriteConfiguration(emptyCfg, map[configura.Variable[bool]]bool{
+				OTEL_ENABLED:         true,
+				OTEL_TRACES_ENABLED:  tt.tracesEnabled,
+				OTEL_METRICS_ENABLED: tt.metricsEnabled,
+				OTEL_LOGS_ENABLED:    tt.logsEnabled,
+			})
+			require.NoError(t, err, "Failed to write free port to configuration")
+			finalCfg := configura.Merge(newDefaultCfg(), emptyCfg)
 
 			originalSlogLogger := slog.Default()
 			slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -257,7 +276,7 @@ func TestSetupOTelSDK_FeaturesDisabled(t *testing.T) {
 				slog.SetDefault(originalSlogLogger)
 			}()
 
-			shutdown, err := setupOTelSDK(ctx, cfg)
+			shutdown, err := setupOTelSDK(ctx, finalCfg)
 			require.NoError(t, err)
 			defer shutdown(context.Background())
 

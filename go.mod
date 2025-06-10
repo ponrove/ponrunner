@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/open-feature/go-sdk v1.15.0
 	github.com/open-feature/go-sdk-contrib/providers/go-feature-flag v0.2.5
-	github.com/ponrove/configura v1.0.0-rc.3
+	github.com/ponrove/configura v1.0.0-rc.4
 	github.com/stretchr/testify v1.10.0
 	github.com/veqryn/slog-context v0.8.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.11.0

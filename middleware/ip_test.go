@@ -36,7 +36,7 @@ func TestIPAddress_NoOverride(t *testing.T) {
 
 func TestIPAddress_SingleOverride_ValidPublicIP(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Forwarded-For"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Forwarded-For"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -61,7 +61,7 @@ func TestIPAddress_SingleOverride_ValidPublicIP(t *testing.T) {
 
 func TestIPAddress_SingleOverride_PrivateIPInHeader_FallbackToPublicRemoteAddr(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Real-IP"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Real-IP"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -86,7 +86,7 @@ func TestIPAddress_SingleOverride_PrivateIPInHeader_FallbackToPublicRemoteAddr(t
 
 func TestIPAddress_SingleOverride_EmptyHeaderValue_FallbackToRemoteAddr(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Client-IP"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Client-IP"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -111,7 +111,7 @@ func TestIPAddress_SingleOverride_EmptyHeaderValue_FallbackToRemoteAddr(t *testi
 
 func TestIPAddress_SingleOverride_HeaderNotPresent_FallbackToRemoteAddr(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-App-IP"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-App-IP"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -135,7 +135,7 @@ func TestIPAddress_SingleOverride_HeaderNotPresent_FallbackToRemoteAddr(t *testi
 
 func TestIPAddress_MultipleOverrides_FirstHeaderValidPublic(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-True-Client-IP,X-Forwarded-For"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-True-Client-IP,X-Forwarded-For"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -161,7 +161,7 @@ func TestIPAddress_MultipleOverrides_FirstHeaderValidPublic(t *testing.T) {
 
 func TestIPAddress_MultipleOverrides_SubsequentHeaderValidPublic_WithSpacesInConfig(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "  X-NonExistent-IP , X-Real-IP  ,  CF-Connecting-IP "
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "  X-NonExistent-IP , X-Real-IP  ,  CF-Connecting-IP "})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -187,7 +187,7 @@ func TestIPAddress_MultipleOverrides_SubsequentHeaderValidPublic_WithSpacesInCon
 
 func TestIPAddress_MultipleOverrides_NonePublicInHeaders_FallbackToPublicRemoteAddr(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Header1,X-Header2"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Header1,X-Header2"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -213,7 +213,7 @@ func TestIPAddress_MultipleOverrides_NonePublicInHeaders_FallbackToPublicRemoteA
 
 func TestIPAddress_HeaderWithMultipleIPs_FirstPublicPicked(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Forwarded-For"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Forwarded-For"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -262,7 +262,7 @@ func TestIPAddress_RemoteAddrOnly_Private(t *testing.T) {
 
 func TestIPAddress_NoValidIPAvailable(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-NonExistent-Header,X-Invalid-IP-Hdr"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-NonExistent-Header,X-Invalid-IP-Hdr"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 
@@ -297,7 +297,7 @@ func TestGetIPAddressFromContext_NotFound(t *testing.T) {
 
 func TestIPAddress_IPv6(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-IPv6-Real-IP"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-IPv6-Real-IP"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 	expectedIP := "2003:db8::1"
@@ -323,7 +323,7 @@ func TestIPAddress_IPv6(t *testing.T) {
 
 func TestIPAddress_IPv6_LoopbackInHeader_FallbackToPublicRemoteIPv6(t *testing.T) {
 	cfg := configura.NewConfigImpl()
-	cfg.RegString[middleware.HTTP_HEADER_REAL_IP_OVERRIDE] = "X-Forwarded-For"
+	configura.WriteConfiguration(cfg, map[configura.Variable[string]]string{middleware.HTTP_HEADER_REAL_IP_OVERRIDE: "X-Forwarded-For"})
 
 	ipMiddleware := middleware.IPAddress(cfg)
 	expectedIP := "2003:db8:85a3::8a2e:370:7334"
