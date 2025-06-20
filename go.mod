@@ -4,7 +4,7 @@ go 1.24.3
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.32.0
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/open-feature/go-sdk v1.15.0
 	github.com/open-feature/go-sdk-contrib/providers/go-feature-flag v0.2.5
 	github.com/ponrove/configura v1.0.0-rc.4
